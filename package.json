@@ -1,0 +1,14 @@
+{
+  "name": "health-autopilot",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "extension"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace frontend && npm run build --workspace extension",
+    "lint": "npm run lint --workspace frontend && npm run lint --workspace extension",
+    "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace extension"
+  }
+}
+

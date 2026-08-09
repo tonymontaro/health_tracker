@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: health-autopilot-backend
+Version: 0.1.0
+Summary: Personal health and hybrid training autopilot backend
+Requires-Python: >=3.12
+Requires-Dist: alembic<2,>=1.16
+Requires-Dist: email-validator<3,>=2.2
+Requires-Dist: fastapi<1,>=0.116
+Requires-Dist: jinja2<4,>=3.1
+Requires-Dist: openai<3,>=1.99
+Requires-Dist: psycopg[binary]<4,>=3.2
+Requires-Dist: pwdlib[argon2]<1,>=0.2
+Requires-Dist: pydantic-settings<3,>=2.10
+Requires-Dist: resend<3,>=2.34
+Requires-Dist: sqlalchemy<3,>=2.0.42
+Requires-Dist: uvicorn[standard]<1,>=0.35
+Provides-Extra: dev
+Requires-Dist: httpx<1,>=0.28; extra == "dev"
+Requires-Dist: mypy<2,>=1.17; extra == "dev"
+Requires-Dist: pytest<9,>=8.4; extra == "dev"
+Requires-Dist: pytest-cov<7,>=6.2; extra == "dev"
+Requires-Dist: ruff<1,>=0.12; extra == "dev"

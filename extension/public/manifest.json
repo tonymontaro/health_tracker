@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Health Autopilot",
+  "version": "0.1.0",
+  "description": "Today's meals, training, and next action from Health Autopilot.",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Health Autopilot"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:8000/*"],
+  "optional_host_permissions": ["https://*/*"]
+}
+
