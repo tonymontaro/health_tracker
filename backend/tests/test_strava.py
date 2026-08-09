@@ -13,6 +13,7 @@ from app.db.models import (
     StravaConnection,
     WorkoutEntry,
 )
+from app.services.history import history_index
 from app.services.metrics import calculate_training_summary
 from app.services.strava import (
     StravaIntegrationError,
@@ -230,6 +231,9 @@ def test_unmatched_strava_activity_is_recorded_as_completed_workout(
     assert imported.status == "completed"
     assert imported.prescription_json["exercise_type"] == "bike"
     assert imported.actual_json["distance_km"] == 18.0
+    indexed_day = next(item for item in history_index(db) if item["date"] == TARGET.isoformat())
+    assert indexed_day["workout_count"] == 1
+    assert indexed_day["strava_activity_count"] == 1
     connection_id = connection.id
     imported_id = imported.id
 

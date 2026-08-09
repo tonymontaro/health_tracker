@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select, union
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -22,6 +22,73 @@ from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 from app.services.planner.domain import validate_plan
 from app.services.workout_log import serialize_workout_log
+
+
+def history_index(db: Session, limit: int = 90) -> list[dict[str, Any]]:
+    date_union = union(
+        select(DailyPlan.plan_date.label("entry_date")),
+        select(NutritionEntry.entry_date.label("entry_date")),
+        select(WorkoutEntry.entry_date.label("entry_date")),
+        select(DailyFoodLog.log_date.label("entry_date")),
+        select(DailyWorkoutLog.log_date.label("entry_date")),
+    ).subquery()
+    dates = list(
+        db.scalars(
+            select(date_union.c.entry_date).order_by(date_union.c.entry_date.desc()).limit(limit)
+        )
+    )
+    if not dates:
+        return []
+
+    plans = {
+        plan.plan_date: plan
+        for plan in db.scalars(select(DailyPlan).where(DailyPlan.plan_date.in_(dates)))
+    }
+    nutrition_counts: dict[date, int] = {
+        entry_date: int(count)
+        for entry_date, count in db.execute(
+            select(NutritionEntry.entry_date, func.count(NutritionEntry.id))
+            .where(NutritionEntry.entry_date.in_(dates))
+            .group_by(NutritionEntry.entry_date)
+        ).all()
+    }
+    workout_counts = {
+        entry_date: {"total": int(total), "strava": int(strava)}
+        for entry_date, total, strava in db.execute(
+            select(
+                WorkoutEntry.entry_date,
+                func.count(WorkoutEntry.id),
+                func.count(WorkoutEntry.id).filter(WorkoutEntry.source == "strava"),
+            )
+            .where(WorkoutEntry.entry_date.in_(dates))
+            .group_by(WorkoutEntry.entry_date)
+        ).all()
+    }
+    food_log_dates = set(
+        db.scalars(select(DailyFoodLog.log_date).where(DailyFoodLog.log_date.in_(dates)))
+    )
+    workout_log_dates = set(
+        db.scalars(select(DailyWorkoutLog.log_date).where(DailyWorkoutLog.log_date.in_(dates)))
+    )
+
+    result: list[dict[str, Any]] = []
+    for entry_date in dates:
+        plan = plans.get(entry_date)
+        nutrition_count = int(nutrition_counts.get(entry_date, 0))
+        workout_count = workout_counts.get(entry_date, {"total": 0, "strava": 0})
+        result.append(
+            {
+                "date": entry_date.isoformat(),
+                "summary": plan.short_summary if plan else "Recorded health activity",
+                "source": plan.current_plan_json.get("source") if plan else "recorded",
+                "nutrition_count": nutrition_count,
+                "workout_count": workout_count["total"],
+                "strava_activity_count": workout_count["strava"],
+                "has_food_log": entry_date in food_log_dates,
+                "has_workout_log": entry_date in workout_log_dates,
+            }
+        )
+    return result
 
 
 def reconcile_day(db: Session, target_date: date) -> dict[str, int]:

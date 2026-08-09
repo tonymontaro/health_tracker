@@ -20,7 +20,7 @@ export function LoginPage() {
       });
       setCsrf(session.csrf_token);
       await refresh();
-      navigate("/today");
+      navigate("/today/food");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Login failed");
     }

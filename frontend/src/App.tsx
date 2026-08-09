@@ -19,12 +19,16 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Protected />}>
-        <Route path="/today" element={<TodayPage />} />
-        <Route path="/history" element={<HistoryPage />} />
+        <Route path="/today" element={<Navigate to="/today/food" replace />} />
+        <Route path="/today/food" element={<TodayPage section="food" />} />
+        <Route path="/today/exercise" element={<TodayPage section="exercise" />} />
+        <Route path="/history" element={<Navigate to="/history/exercise" replace />} />
+        <Route path="/history/nutrition" element={<HistoryPage section="nutrition" />} />
+        <Route path="/history/exercise" element={<HistoryPage section="exercise" />} />
         <Route path="/shopping" element={<ShoppingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/today" replace />} />
+      <Route path="*" element={<Navigate to="/today/food" replace />} />
     </Routes>
   );
 }

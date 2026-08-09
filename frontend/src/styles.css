@@ -42,6 +42,9 @@ textarea { min-height: 78px; resize: vertical; }
 .page { max-width: 1180px; margin: 0 auto; padding: 2.5rem 2rem 5rem; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2.4rem; }
 .eyebrow { margin-bottom: 0.5rem; color: #6c7f76; font-size: 0.71rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; font-family: "DM Sans", sans-serif; }
+.page-tabs { display: flex; width: fit-content; gap: 0.35rem; margin: -1rem 0 1.25rem; padding: 0.3rem; border: 1px solid #d4dad3; border-radius: 13px; background: rgba(250, 249, 244, 0.72); }
+.page-tabs a { padding: 0.62rem 0.9rem; border-radius: 9px; color: #60766e; font-size: 0.84rem; font-weight: 700; }
+.page-tabs a.active { color: white; background: var(--forest); box-shadow: 0 4px 12px rgba(30, 85, 69, 0.16); }
 
 .card { background: rgba(250, 249, 244, 0.94); border: 1px solid rgba(198, 205, 197, 0.8); border-radius: 20px; padding: 1.45rem; box-shadow: 0 4px 16px rgba(24, 51, 45, 0.035); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -142,7 +145,11 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .history-detail { display: grid; gap: 1rem; }
 .history-entry, .shopping-item, .rule-list > div { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 0; border-bottom: 1px solid var(--line); }
 .history-entry > div:first-child, .shopping-item > div { display: grid; gap: 0.25rem; }
-.history-entry .status { margin-left: 0.5rem; }
+.history-entry-title { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.provenance { width: fit-content; border-radius: 999px; padding: 0.24rem 0.5rem; color: #5d7069; background: #e8ece7; font-size: 0.68rem; font-weight: 700; text-transform: capitalize; }
+.provenance-strava { color: #694119; background: #f4e5d0; }
+.strava-link { width: fit-content; color: #b44d18; font-size: 0.76rem; font-weight: 700; }
+.strava-link:hover { text-decoration: underline; }
 details summary { cursor: pointer; font-weight: 700; margin-bottom: 1rem; }
 .shopping-summary { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 1.25rem; background: var(--ink); color: white; border-radius: 20px; padding: 1.4rem; }
 .shopping-summary > div { display: grid; gap: 0.25rem; padding: 0 1.1rem; border-right: 1px solid rgba(255,255,255,0.18); }
@@ -168,6 +175,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.4rem 0; }
   .topbar nav { overflow-x: auto; }
   .topbar nav a { padding: 0.55rem; }
   .page { padding: 1.5rem 1rem 4rem; }
+  .page-tabs { max-width: 100%; overflow-x: auto; }
   .today-grid, .history-layout, .shopping-grid, .settings-grid { grid-template-columns: 1fr; }
   .history-list { display: flex; position: static; max-height: none; overflow-x: auto; }
   .history-list button { min-width: 170px; }

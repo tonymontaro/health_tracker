@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import type { Exercise, Meal, Today } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
@@ -283,7 +284,7 @@ function ChatPanel({ initialQuestion }: { initialQuestion: string }) {
   );
 }
 
-export function TodayPage() {
+export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
   const today = useQuery({ queryKey: ["today"], queryFn: () => api<Today>("/today") });
@@ -291,26 +292,36 @@ export function TodayPage() {
   if (today.isLoading) return <div className="loading">Building today's plan...</div>;
   if (today.error || !today.data) return <div className="error-panel"><h1>Today's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
+  const isFood = section === "food";
   return (
     <>
-      <header className="page-header"><div><p className="eyebrow">{new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1>Today</h1></div><span className={`source source-${data.source}`}>{data.source === "openai" ? "AI planned" : "Reliable fallback"}</span></header>
+      <header className="page-header"><div><p className="eyebrow">{new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1>{isFood ? "Food & nutrition" : "Exercise"}</h1></div><span className={`source source-${data.source}`}>{data.source === "openai" ? "AI planned" : "Reliable fallback"}</span></header>
+      <nav className="page-tabs" aria-label="Today's plan sections">
+        <NavLink to="/today/food">Food & nutrition</NavLink>
+        <NavLink to="/today/exercise">Exercise</NavLink>
+      </nav>
       <section className="status-hero"><div><p className="eyebrow">Current status</p><h2>{data.current_status}</h2><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></div><div className="hero-orb" /></section>
       <div className="today-grid">
         <div className="main-column">
-          <FoodLogCard key={`food-${data.date}`} today={data} />
-          <MealRegenerationCard today={data} />
-          <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
-          {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
-          <WorkoutCard today={data} onAskAlternative={() => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
-          <WorkoutLogCard key={`workout-${data.date}`} today={data} />
-          {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities today</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
+          {isFood ? <>
+            <FoodLogCard key={`food-${data.date}`} today={data} />
+            <MealRegenerationCard today={data} />
+            <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
+            {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
+          </> : <>
+            <WorkoutCard today={data} onAskAlternative={() => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
+            <WorkoutLogCard key={`workout-${data.date}`} today={data} />
+            {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities today</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
+          </>}
         </div>
         <aside className="side-column">
-          <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>
-          <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small></div>)}</section>
-          <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
+          {isFood ? <>
+            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>
+            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small></div>)}</section>
+            <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
+          </> : <section className="card compact"><p className="eyebrow">Today's training</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
-          <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>
+          {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
         </aside>
       </div>
       <ChatPanel key={alternativeQuestion} initialQuestion={alternativeQuestion} />

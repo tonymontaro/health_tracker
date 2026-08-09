@@ -4,18 +4,18 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
-from app.db.models import DailyPlan, NutritionEntry, WorkoutEntry
+from app.db.models import NutritionEntry, WorkoutEntry
 from app.db.session import get_db
 from app.schemas.api import HistoryNutritionUpdate, HistoryWorkoutUpdate
 from app.services.history import (
     correct_nutrition_entry,
     correct_workout_entry,
     history_day,
+    history_index,
     serialize_nutrition,
     serialize_workout,
 )
@@ -27,15 +27,7 @@ router = APIRouter(prefix="/history", tags=["history"])
 def list_history(
     _: AuthContext = Depends(require_auth), db: Session = Depends(get_db)
 ) -> list[dict[str, Any]]:
-    plans = list(db.scalars(select(DailyPlan).order_by(DailyPlan.plan_date.desc()).limit(90)))
-    return [
-        {
-            "date": plan.plan_date.isoformat(),
-            "summary": plan.short_summary,
-            "source": plan.current_plan_json.get("source"),
-        }
-        for plan in plans
-    ]
+    return history_index(db)
 
 
 @router.get("/{target_date}")
