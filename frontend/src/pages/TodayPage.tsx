@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
-import type { Exercise, Meal, Today } from "../api/types";
+import type { Exercise, ExtractedWorkout, Meal, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
 
 function pace(seconds?: number | null): string {
@@ -137,16 +137,132 @@ function actualWorkoutText(actual?: Record<string, unknown> | null): string {
   return parts.join(" · ");
 }
 
+type EditableWorkout = ExtractedWorkout & { draftKey: string; repsText: string };
+type EditableWorkoutExtraction = Omit<WorkoutLogExtraction, "workouts"> & { workouts: EditableWorkout[] };
+
+function editableWorkout(workout: ExtractedWorkout): EditableWorkout {
+  return {
+    ...workout,
+    draftKey: crypto.randomUUID(),
+    repsText: workout.reps_per_set?.join(", ") ?? "",
+  };
+}
+
+function submittedWorkout(workout: EditableWorkout): ExtractedWorkout {
+  return {
+    workout_name: workout.workout_name,
+    exercise_type: workout.exercise_type,
+    duration_seconds: workout.duration_seconds,
+    distance_km: workout.distance_km,
+    load_kg: workout.load_kg,
+    external_load_kg: workout.external_load_kg,
+    sets: workout.sets,
+    reps_per_set: workout.reps_per_set,
+    average_power_watts: workout.average_power_watts,
+    average_heartrate_bpm: workout.average_heartrate_bpm,
+    difficulty_1_to_10: workout.difficulty_1_to_10,
+    pain_flag: workout.pain_flag,
+    notes: workout.notes,
+    matched_recommendation_id: workout.matched_recommendation_id,
+    match_confidence: workout.match_confidence,
+    assumptions: workout.assumptions,
+  };
+}
+
+function optionalNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function workoutDraftError(draft: EditableWorkoutExtraction | null): string | null {
+  if (!draft) return null;
+  const matchedIds = draft.workouts.flatMap((workout) => workout.matched_recommendation_id ? [workout.matched_recommendation_id] : []);
+  if (matchedIds.length !== new Set(matchedIds).size) return "A recommendation can only be matched to one extracted exercise.";
+  for (const workout of draft.workouts) {
+    if (!workout.workout_name.trim()) return "Every exercise needs a name.";
+    const evidence = [workout.duration_seconds, workout.distance_km, workout.load_kg, workout.external_load_kg, workout.sets, workout.reps_per_set];
+    if (!evidence.some((value) => value !== null)) return `${workout.workout_name} needs at least one duration, distance, load, set, or repetition value.`;
+    if (workout.duration_seconds !== null && (workout.duration_seconds <= 0 || workout.duration_seconds > 43200)) return `${workout.workout_name} needs a duration between 1 second and 12 hours.`;
+    if (workout.distance_km !== null && (workout.distance_km <= 0 || workout.distance_km > 500)) return `${workout.workout_name} needs a distance between 0 and 500 km.`;
+    if (workout.load_kg !== null && (workout.load_kg < 0 || workout.load_kg > 500)) return `${workout.workout_name} needs a load between 0 and 500 kg.`;
+    if (workout.external_load_kg !== null && (workout.external_load_kg < 0 || workout.external_load_kg > 200)) return `${workout.workout_name} needs an external load between 0 and 200 kg.`;
+    if (workout.sets !== null && (!Number.isInteger(workout.sets) || workout.sets < 1 || workout.sets > 100)) return `${workout.workout_name} needs a whole-number set count between 1 and 100.`;
+    const repTokens = workout.repsText.split(",").map((value) => value.trim()).filter(Boolean);
+    if (repTokens.some((value) => !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 1000)) return `${workout.workout_name} has an invalid repetition value.`;
+    if (workout.reps_per_set && workout.reps_per_set.length > 100) return `${workout.workout_name} cannot contain more than 100 sets of repetitions.`;
+    if (workout.average_power_watts !== null && (workout.average_power_watts < 0 || workout.average_power_watts > 3000)) return `${workout.workout_name} needs average power between 0 and 3000 W.`;
+    if (workout.average_heartrate_bpm !== null && (workout.average_heartrate_bpm < 20 || workout.average_heartrate_bpm > 260)) return `${workout.workout_name} needs average heart rate between 20 and 260 bpm.`;
+    if (workout.difficulty_1_to_10 !== null && (!Number.isInteger(workout.difficulty_1_to_10) || workout.difficulty_1_to_10 < 1 || workout.difficulty_1_to_10 > 10)) return `${workout.workout_name} needs a whole-number difficulty between 1 and 10.`;
+  }
+  return null;
+}
+
+function WorkoutDraftEditor({
+  workout,
+  recommendations,
+  onChange,
+  onDelete,
+}: {
+  workout: EditableWorkout;
+  recommendations: Exercise[];
+  onChange: (changes: Partial<EditableWorkout>) => void;
+  onDelete: () => void;
+}) {
+  const strength = workout.exercise_type === "strength" || workout.exercise_type === "bodyweight";
+  return (
+    <article className="workout-editor">
+      <div className="card-heading"><strong>Extracted exercise</strong><button type="button" className="text-button danger" onClick={onDelete}>Delete</button></div>
+      <div className="workout-editor-grid">
+        <label>Exercise name<input required maxLength={160} value={workout.workout_name} onChange={(event) => onChange({ workout_name: event.target.value })} /></label>
+        <label>Type<select value={workout.exercise_type} onChange={(event) => onChange({ exercise_type: event.target.value as ExtractedWorkout["exercise_type"] })}><option value="strength">Strength</option><option value="bodyweight">Bodyweight</option><option value="run">Run</option><option value="bike">Bike</option><option value="recovery">Recovery</option></select></label>
+        <label>Duration, minutes<input type="number" min="0.1" step="0.1" value={workout.duration_seconds ? workout.duration_seconds / 60 : ""} onChange={(event) => { const minutes = optionalNumber(event.target.value); onChange({ duration_seconds: minutes === null ? null : Math.round(minutes * 60) }); }} /></label>
+        <label>Distance, km<input type="number" min="0.01" step="0.01" value={workout.distance_km ?? ""} onChange={(event) => onChange({ distance_km: optionalNumber(event.target.value) })} /></label>
+        {strength && <><label>Load, kg<input type="number" min="0" step="0.5" value={workout.load_kg ?? ""} onChange={(event) => onChange({ load_kg: optionalNumber(event.target.value) })} /></label><label>External load, kg<input type="number" min="0" step="0.5" value={workout.external_load_kg ?? ""} onChange={(event) => onChange({ external_load_kg: optionalNumber(event.target.value) })} /></label><label>Sets<input type="number" min="1" step="1" value={workout.sets ?? ""} onChange={(event) => onChange({ sets: optionalNumber(event.target.value) })} /></label><label>Reps per set<input value={workout.repsText} placeholder="8, 8, 8" onChange={(event) => { const repsText = event.target.value; const reps = repsText.split(",").map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0); onChange({ repsText, reps_per_set: reps.length ? reps : null }); }} /></label></>}
+        {workout.exercise_type === "bike" && <label>Average power, W<input type="number" min="0" step="1" value={workout.average_power_watts ?? ""} onChange={(event) => onChange({ average_power_watts: optionalNumber(event.target.value) })} /></label>}
+        <label>Average heart rate<input type="number" min="20" max="260" step="1" value={workout.average_heartrate_bpm ?? ""} onChange={(event) => onChange({ average_heartrate_bpm: optionalNumber(event.target.value) })} /></label>
+        <label>Difficulty, 1-10<input type="number" min="1" max="10" step="1" value={workout.difficulty_1_to_10 ?? ""} onChange={(event) => onChange({ difficulty_1_to_10: optionalNumber(event.target.value) })} /></label>
+        <label>Matched recommendation<select value={workout.matched_recommendation_id ?? ""} onChange={(event) => onChange({ matched_recommendation_id: event.target.value || null, match_confidence: event.target.value ? 1 : 0 })}><option value="">Unplanned exercise</option>{recommendations.map((exercise) => <option key={exercise.recommendation_id} value={exercise.recommendation_id}>{exercise.exercise_name}</option>)}</select></label>
+      </div>
+      <label>Notes<textarea maxLength={2000} value={workout.notes ?? ""} onChange={(event) => onChange({ notes: event.target.value || null })} /></label>
+      <label className="checkbox"><input type="checkbox" checked={workout.pain_flag} onChange={(event) => onChange({ pain_flag: event.target.checked })} /> Pain occurred</label>
+    </article>
+  );
+}
+
 function WorkoutLogCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState(today.workout_log?.raw_text ?? "");
+  const [draft, setDraft] = useState<EditableWorkoutExtraction | null>(null);
+  const [analyzedText, setAnalyzedText] = useState<string | null>(null);
+  const [stravaMessage, setStravaMessage] = useState("");
   const workoutLog = today.workout_log;
-  const save = useMutation({
-    mutationFn: () => api("/today/workout/log", {
+  const analyze = useMutation({
+    mutationFn: () => api<{ raw_text: string; extraction: WorkoutLogExtraction }>("/today/workout/log/analyze", {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+    onSuccess: (result) => {
+      setDraft({ ...result.extraction, workouts: result.extraction.workouts.map(editableWorkout) });
+      setAnalyzedText(result.raw_text);
+    },
+  });
+  const submitReview = useMutation({
+    mutationFn: () => {
+      if (!draft) throw new Error("Analyze the workout before submitting it.");
+      const extraction: WorkoutLogExtraction = {
+        ...draft,
+        did_no_workout: draft.workouts.length === 0,
+        workouts: draft.workouts.map(submittedWorkout),
+      };
+      return api("/today/workout/log", {
+        method: "POST",
+        body: JSON.stringify({ text, extraction }),
+      });
+    },
     onSuccess: async () => {
+      setDraft(null);
+      setAnalyzedText(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
@@ -154,21 +270,69 @@ function WorkoutLogCard({ today }: { today: Today }) {
       ]);
     },
   });
-  function submit(event: FormEvent) {
+  const retrieveStrava = useMutation({
+    mutationFn: () => api<StravaSyncResult>("/integrations/strava/sync-today", { method: "POST" }),
+    onSuccess: async (result) => {
+      setStravaMessage(result.fetched ? `Retrieved ${result.fetched} ${result.fetched === 1 ? "activity" : "activities"} from Strava.` : "No Strava activities were found for today.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["strava"] }),
+      ]);
+    },
+  });
+  function submitAnalysis(event: FormEvent) {
     event.preventDefault();
-    if (text.trim()) save.mutate();
+    if (text.trim()) analyze.mutate();
   }
+  function changeWorkout(index: number, changes: Partial<EditableWorkout>) {
+    setDraft((current) => current ? { ...current, workouts: current.workouts.map((workout, workoutIndex) => workoutIndex === index ? { ...workout, ...changes } : workout) } : current);
+  }
+  function addWorkout() {
+    const workout = editableWorkout({
+      workout_name: "New exercise",
+      exercise_type: "recovery",
+      duration_seconds: null,
+      distance_km: null,
+      load_kg: null,
+      external_load_kg: null,
+      sets: null,
+      reps_per_set: null,
+      average_power_watts: null,
+      average_heartrate_bpm: null,
+      difficulty_1_to_10: null,
+      pain_flag: false,
+      notes: null,
+      matched_recommendation_id: null,
+      match_confidence: 0,
+      assumptions: [],
+    });
+    setDraft((current) => current ? { ...current, did_no_workout: false, workouts: [...current.workouts, workout] } : current);
+  }
+  const reviewError = workoutDraftError(draft);
   return (
     <section className="card workout-log-card">
-      <div className="card-heading"><p className="eyebrow">What I trained today</p>{workoutLog && <StatusPill status="processed" />}</div>
+      <div className="card-heading"><div><p className="eyebrow">What I trained today</p>{workoutLog && <StatusPill status="processed" />}</div><button type="button" className="quiet small" disabled={retrieveStrava.isPending} onClick={() => { setStravaMessage(""); retrieveStrava.mutate(); }}>{retrieveStrava.isPending ? "Retrieving..." : "Retrieve from Strava"}</button></div>
       <h2>Describe the workout in your own words</h2>
-      <p>Use this instead of the structured completion fields. AI will turn your description into specific exercises and actual results, then match them to today's recommendations where appropriate.</p>
-      <form onSubmit={submit}>
+      <p>Analyze your description, review every extracted exercise, make any corrections, and submit only when the record is accurate.</p>
+      <form onSubmit={submitAnalysis}>
         <label>Workout details<textarea value={text} maxLength={5000} onChange={(event) => setText(event.target.value)} placeholder="Ran 6.2 km in 38 minutes, then did 3 sets of 8 pull-ups. Difficulty 6/10 and no pain." /></label>
-        <div className="food-log-submit"><small>Only this text and today's workout suggestions are sent for analysis. Existing Strava evidence is preserved.</small><button className="primary" disabled={save.isPending || !text.trim()}>{save.isPending ? "Analyzing..." : workoutLog ? "Re-analyze and replace record" : "Analyze and record"}</button></div>
+        <div className="food-log-submit"><small>Analysis does not record anything. Existing Strava evidence is preserved.</small><button className="primary" disabled={analyze.isPending || !text.trim()}>{analyze.isPending ? "Analyzing..." : "Analyze"}</button></div>
       </form>
-      {save.error && <p className="error">{save.error.message}</p>}
-      {workoutLog && <div className="extraction-result">
+      {analyze.error && <p className="error">{analyze.error.message}</p>}
+      {retrieveStrava.error && <p className="error">{retrieveStrava.error.message}</p>}
+      {stravaMessage && <p className="success standalone">{stravaMessage}</p>}
+      {draft && <div className="workout-review">
+        <div><p className="eyebrow">Review before submitting</p><h3>Extracted exercises</h3><p>Correct fields, delete incorrect items, or add anything the analysis missed.</p></div>
+        <label>Summary<input maxLength={1000} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
+        {draft.workouts.map((workout, index) => <WorkoutDraftEditor key={workout.draftKey} workout={workout} recommendations={today.workout.exercises} onChange={(changes) => changeWorkout(index, changes)} onDelete={() => setDraft({ ...draft, workouts: draft.workouts.filter((_, workoutIndex) => workoutIndex !== index) })} />)}
+        {draft.workouts.length === 0 && <p className="empty-review">No exercises will be recorded. Add an exercise if that is not correct.</p>}
+        <div className="review-actions"><button type="button" className="quiet" onClick={addWorkout}>Add exercise</button><button type="button" className="primary" disabled={submitReview.isPending || analyzedText !== text || reviewError !== null} onClick={() => submitReview.mutate()}>{submitReview.isPending ? "Submitting..." : "Submit reviewed workout"}</button></div>
+        {analyzedText !== text && <p className="assumption-note">The description changed after analysis. Analyze it again before submitting.</p>}
+        {reviewError && <p className="assumption-note">{reviewError}</p>}
+        {submitReview.error && <p className="error">{submitReview.error.message}</p>}
+      </div>}
+      {!draft && workoutLog && <div className="extraction-result">
         <p className="extraction-summary">{workoutLog.extraction.summary}</p>
         {workoutLog.extraction.did_no_workout && <p>No workout was recorded.</p>}
         {workoutLog.extraction.workouts.map((workout, index) => <article className="recorded-workout" key={`${workout.workout_name}-${index}`}>
@@ -179,6 +343,37 @@ function WorkoutLogCard({ today }: { today: Today }) {
         </article>)}
         {workoutLog.extraction.assumptions.length > 0 && <p className="assumption-note"><strong>Assumptions:</strong> {workoutLog.extraction.assumptions.join(" ")}</p>}
       </div>}
+    </section>
+  );
+}
+
+function WorkoutRegenerationCard({ today }: { today: Today }) {
+  const queryClient = useQueryClient();
+  const unresolved = today.workout.exercises.every((exercise) => (today.workout_status[exercise.recommendation_id]?.status ?? "planned") === "planned");
+  const hasRecordedExercise = today.actual_workouts.some((entry) => entry.status === "completed" || entry.actual);
+  const regenerate = useMutation({
+    mutationFn: () => api("/today/workout/regenerate", { method: "POST" }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["strava"] }),
+      ]);
+    },
+  });
+  const disabledReason = today.workout_log
+    ? "Today's workout diary is already the actual record."
+    : hasRecordedExercise
+      ? "Exercise has already been recorded for today."
+      : !unresolved
+        ? "The workout can only be regenerated before it is completed or skipped."
+        : null;
+  return (
+    <section className="card workout-regeneration-card">
+      <div><p className="eyebrow">Refresh today's recommendation</p><strong>Use the latest activity history</strong><small>When Strava is connected, yesterday is retrieved first. The planner then rebuilds only today's exercise recommendation from the refreshed 28-day history.</small>{disabledReason && <small>{disabledReason}</small>}</div>
+      <button type="button" className="quiet" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate exercise"}</button>
+      {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
   );
 }
@@ -309,6 +504,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
             {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
           </> : <>
+            <WorkoutRegenerationCard today={data} />
             <WorkoutCard today={data} onAskAlternative={() => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
             <WorkoutLogCard key={`workout-${data.date}`} today={data} />
             {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities today</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}

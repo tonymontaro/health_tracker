@@ -11,6 +11,7 @@ from app.core.config import Settings
 from app.db.models import DailyPlan, DailyWorkoutLog, UserProfile, WorkoutEntry
 from app.schemas.workout_log import (
     ExtractedWorkout,
+    WorkoutLogAnalysisResponse,
     WorkoutLogExtraction,
     WorkoutLogResponse,
 )
@@ -131,40 +132,42 @@ def validate_extraction(
     return errors
 
 
-def process_daily_workout_log(
+def analyze_daily_workout_log(
     db: Session,
     settings: Settings,
     target_date: date,
     raw_text: str,
     *,
     extractor: WorkoutLogExtractionProvider | None = None,
-) -> WorkoutLogResponse:
-    plan = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date))
-    if plan is None:
-        raise LookupError("Today's plan is not available")
-    planned_entries = list(
-        db.scalars(
-            select(WorkoutEntry).where(
-                WorkoutEntry.entry_date == target_date,
-                WorkoutEntry.planned_recommendation_id.is_not(None),
-            )
-        )
-    )
-    eligible_entries = [
-        entry
-        for entry in planned_entries
-        if entry.status in MUTABLE_STATUSES or entry.source == "ai_workout_log"
-    ]
-    recommendations = [_recommendation_context(entry) for entry in eligible_entries]
+) -> WorkoutLogAnalysisResponse:
+    _, _, recommendations = _workout_context(db, target_date)
     active_extractor = extractor or WorkoutLogExtractor(settings)
-
     extraction = active_extractor.extract(raw_text, recommendations)
-    validation_errors = validate_extraction(
-        extraction,
-        {str(item["recommendation_id"]) for item in recommendations if item["recommendation_id"]},
+    _validate_reviewed_extraction(extraction, recommendations)
+    return WorkoutLogAnalysisResponse(raw_text=raw_text, extraction=extraction)
+
+
+def process_daily_workout_log(
+    db: Session,
+    settings: Settings,
+    target_date: date,
+    raw_text: str,
+    *,
+    extraction: WorkoutLogExtraction | None = None,
+    extractor: WorkoutLogExtractionProvider | None = None,
+) -> WorkoutLogResponse:
+    planned_entries, eligible_entries, recommendations = _workout_context(db, target_date)
+    active_extractor = extractor or (WorkoutLogExtractor(settings) if extraction is None else None)
+    if extraction is None:
+        if active_extractor is None:  # pragma: no cover - guarded by the branch above.
+            raise WorkoutLogExtractionError("Workout analysis is unavailable")
+        extraction = active_extractor.extract(raw_text, recommendations)
+    _validate_reviewed_extraction(extraction, recommendations)
+    model = (
+        active_extractor.model
+        if active_extractor
+        else f"{settings.openai_workout_log_model}:reviewed"
     )
-    if validation_errors:
-        raise WorkoutLogExtractionError("; ".join(validation_errors))
 
     try:
         db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date).with_for_update())
@@ -177,7 +180,7 @@ def process_daily_workout_log(
                 raw_text=raw_text,
                 extraction_json={},
                 previous_entries_json=[_entry_snapshot(entry) for entry in eligible_entries],
-                model=active_extractor.model,
+                model=model,
                 status="processing",
             )
             db.add(workout_log)
@@ -247,7 +250,7 @@ def process_daily_workout_log(
 
         workout_log.raw_text = raw_text
         workout_log.extraction_json = extraction.model_dump(mode="json")
-        workout_log.model = active_extractor.model
+        workout_log.model = model
         workout_log.status = "processed"
         profile = db.scalar(select(UserProfile))
         if profile:
@@ -264,6 +267,40 @@ def process_daily_workout_log(
         skipped_recommendation_ids=sorted(eligible_ids - matched_ids),
         matched_recommendation_ids=sorted(matched_ids),
     )
+
+
+def _workout_context(
+    db: Session, target_date: date
+) -> tuple[list[WorkoutEntry], list[WorkoutEntry], list[dict[str, Any]]]:
+    plan = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date))
+    if plan is None:
+        raise LookupError("Today's plan is not available")
+    planned_entries = list(
+        db.scalars(
+            select(WorkoutEntry).where(
+                WorkoutEntry.entry_date == target_date,
+                WorkoutEntry.planned_recommendation_id.is_not(None),
+            )
+        )
+    )
+    eligible_entries = [
+        entry
+        for entry in planned_entries
+        if entry.status in MUTABLE_STATUSES or entry.source == "ai_workout_log"
+    ]
+    recommendations = [_recommendation_context(entry) for entry in eligible_entries]
+    return planned_entries, eligible_entries, recommendations
+
+
+def _validate_reviewed_extraction(
+    extraction: WorkoutLogExtraction, recommendations: list[dict[str, Any]]
+) -> None:
+    validation_errors = validate_extraction(
+        extraction,
+        {str(item["recommendation_id"]) for item in recommendations if item["recommendation_id"]},
+    )
+    if validation_errors:
+        raise WorkoutLogExtractionError("; ".join(validation_errors))
 
 
 def serialize_workout_log(workout_log: DailyWorkoutLog | None) -> dict[str, Any] | None:

@@ -1,7 +1,9 @@
 import logging
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -21,6 +23,7 @@ from app.services.strava import (
     mark_connection_revoked,
     serialize_connection,
     sync_connection,
+    sync_connection_for_date,
     sync_webhook_activity,
 )
 
@@ -109,6 +112,22 @@ def sync_strava(
         raise HTTPException(status_code=404, detail="Strava is not connected")
     try:
         return sync_connection(db, settings, connection)
+    except StravaIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/sync-today")
+def sync_strava_today(
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, int]:
+    connection = _connection(db, auth.account.id)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Strava is not connected")
+    target_date = datetime.now(ZoneInfo(settings.app_timezone)).date()
+    try:
+        return sync_connection_for_date(db, settings, connection, target_date)
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

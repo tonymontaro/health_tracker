@@ -282,6 +282,8 @@ Later syncs re-read a 35-day lookback window so delayed uploads and edited activ
 Set `STRAVA_SYNC_MAX_ACTIVITIES_PER_RUN=2` while validating a new connection to cap each sync to the two newest activities, then raise or remove that override after testing.
 The scheduler checks for due syncs before morning planning and no more often than the configured interval.
 The Settings page also provides a manual sync control.
+The Exercise page provides a date-bounded Retrieve from Strava action for today's activities without changing the periodic background-sync schedule.
+Its Regenerate exercise action retrieves the previous local day from Strava when connected, rebuilds a fresh history snapshot, and regenerates only today's unresolved workout while preserving nutrition.
 
 Runs, rides, and recovery activities are matched by activity type and workload to an unresolved recommendation for the same application-local date.
 A Strava strength session can complete the day's unresolved strength recommendations, but it does not invent exercise-level loads or repetitions that Strava did not provide.
@@ -309,7 +311,8 @@ Scheduled sync remains the retry path if webhook processing fails.
 ## Daily workout recording
 
 The Today page offers structured workout completion and an alternate free-text workout diary.
-The free-text route sends only the diary text and today's workout suggestions to OpenAI Structured Outputs.
+The free-text workflow first sends only the diary text and today's workout suggestions to OpenAI Structured Outputs without changing stored workout data.
+The resulting draft can be corrected, deleted, or extended with manual exercises before a separately validated submission records it.
 Validated results contain typed activities, measurements, difficulty, pain, notes, assumptions, and optional recommendation matches.
 Matched recommendations become completed, unmatched recommendations become skipped by the diary, and unplanned exercise becomes a separate completed workout.
 Re-analysis atomically replaces only entries still controlled by that diary and preserves later Strava imports or History corrections.

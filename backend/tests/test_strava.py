@@ -24,6 +24,7 @@ from app.services.strava import (
     mark_connection_revoked,
     remove_activity,
     sync_connection,
+    sync_connection_for_date,
 )
 
 TARGET = date(2026, 8, 10)
@@ -36,6 +37,7 @@ class FakeStrava:
         self.refresh_calls = 0
         self.revoked_token: str | None = None
         self.activity_list_calls: list[tuple[int, int]] = []
+        self.activity_list_windows: list[tuple[int, int | None]] = []
 
     def exchange_code(self, code: str) -> dict[str, Any]:
         assert code == "oauth-code"
@@ -63,13 +65,33 @@ class FakeStrava:
         }
 
     def list_activities(
-        self, access_token: str, *, after: int, page: int, per_page: int
+        self,
+        access_token: str,
+        *,
+        after: int,
+        before: int | None,
+        page: int,
+        per_page: int,
     ) -> list[dict[str, Any]]:
         assert access_token in {"initial-access-token", "rotated-access-token"}
         assert after < int(NOW.timestamp())
         self.activity_list_calls.append((page, per_page))
+        self.activity_list_windows.append((after, before))
+        matching = [
+            item
+            for item in self.activities
+            if int(datetime.fromisoformat(item["start_date"].replace("Z", "+00:00")).timestamp())
+            > after
+            and (
+                before is None
+                or int(
+                    datetime.fromisoformat(item["start_date"].replace("Z", "+00:00")).timestamp()
+                )
+                < before
+            )
+        ]
         start = (page - 1) * per_page
-        return self.activities[start : start + per_page]
+        return matching[start : start + per_page]
 
     def get_activity(self, access_token: str, activity_id: int) -> dict[str, Any]:
         return next(item for item in self.activities if item["id"] == activity_id)
@@ -96,13 +118,14 @@ def activity(
     sport_type: str = "Run",
     distance: float = 6200,
     moving_time: int = 2280,
+    start_date: str = "2026-08-10T16:30:00Z",
 ) -> dict[str, Any]:
     return {
         "id": activity_id,
         "name": name,
         "sport_type": sport_type,
         "type": "Run" if sport_type == "Run" else "Ride",
-        "start_date": "2026-08-10T16:30:00Z",
+        "start_date": start_date,
         "start_date_local": "2026-08-10T18:30:00Z",
         "distance": distance,
         "moving_time": moving_time,
@@ -255,6 +278,35 @@ def test_sync_respects_per_run_activity_cap(db: Session, settings: Settings, see
     assert result == {"fetched": 2, "created": 2, "updated": 0, "matched": 0}
     assert provider.activity_list_calls == [(1, 2)]
     assert db.scalar(select(func.count(StravaActivity.id))) == 2
+
+
+def test_on_demand_sync_retrieves_only_the_requested_local_day(
+    db: Session, settings: Settings, seeded
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava(
+        [
+            activity(601, start_date="2026-08-10T16:30:00Z"),
+            activity(602, start_date="2026-08-11T16:30:00Z"),
+        ]
+    )
+    connection = authorize(db, configured, seeded.account_id, provider)
+
+    result = sync_connection_for_date(
+        db,
+        configured,
+        connection,
+        TARGET,
+        provider=provider,
+        now=NOW,
+    )
+
+    assert result == {"fetched": 1, "created": 1, "updated": 0, "matched": 0}
+    imported_ids = set(db.scalars(select(StravaActivity.strava_activity_id)))
+    assert imported_ids == {601}
+    db.refresh(connection)
+    assert connection.last_synced_at is None
+    assert provider.activity_list_windows[-1][1] is not None
 
 
 def test_generic_strava_strength_session_does_not_invent_strength_volume(

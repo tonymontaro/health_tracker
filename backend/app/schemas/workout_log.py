@@ -57,8 +57,17 @@ class WorkoutLogExtraction(BaseModel):
 
     did_no_workout: bool
     workouts: list[ExtractedWorkout] = Field(max_length=20)
-    summary: str
+    summary: str = Field(min_length=1, max_length=1000)
     assumptions: list[str] = Field(max_length=20)
+
+
+class WorkoutLogAnalysisResponse(BaseModel):
+    raw_text: str
+    extraction: WorkoutLogExtraction
+
+
+class WorkoutLogSubmissionRequest(WorkoutLogRequest):
+    extraction: WorkoutLogExtraction
 
 
 class WorkoutLogResponse(BaseModel):

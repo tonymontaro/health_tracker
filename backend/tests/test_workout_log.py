@@ -13,12 +13,13 @@ from app.core.security import token_digest
 from app.db.models import ApiToken, DailyWorkoutLog, WorkoutEntry
 from app.db.session import get_db
 from app.main import app
-from app.schemas.workout_log import WorkoutLogExtraction
+from app.schemas.workout_log import ExtractedWorkout, WorkoutLogExtraction
 from app.services.history import correct_workout_entry
 from app.services.metrics import calculate_training_summary
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.workout_log import (
     WorkoutLogExtractionError,
+    analyze_daily_workout_log,
     process_daily_workout_log,
 )
 
@@ -197,6 +198,70 @@ def test_failed_workout_extraction_leaves_entries_unchanged(
     assert db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == TARGET)) is None
 
 
+def test_reviewed_workout_analysis_can_correct_delete_and_add_before_submission(
+    db: Session, settings: Settings, seeded
+) -> None:
+    generate_daily_plan(db, settings, TARGET, use_ai=False)
+    planned = db.scalar(
+        select(WorkoutEntry).where(
+            WorkoutEntry.entry_date == TARGET,
+            WorkoutEntry.planned_recommendation_id.is_not(None),
+        )
+    )
+    assert planned and planned.planned_recommendation_id
+    preview = analyze_daily_workout_log(
+        db,
+        settings,
+        TARGET,
+        "Bench press, yoga, and a short run.",
+        extractor=FakeExtractor(
+            extraction(matched_recommendation_id=planned.planned_recommendation_id)
+        ),
+    )
+    assert db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == TARGET)) is None
+
+    reviewed = preview.extraction.model_copy(deep=True)
+    reviewed.workouts = reviewed.workouts[:1]
+    reviewed.workouts[0].workout_name = "Corrected dumbbell bench press"
+    reviewed.workouts[0].load_kg = 30
+    reviewed.workouts.append(
+        ExtractedWorkout.model_validate(
+            {
+                "workout_name": "Short recovery run",
+                "exercise_type": "run",
+                "duration_seconds": 900,
+                "distance_km": 2.1,
+                "load_kg": None,
+                "external_load_kg": None,
+                "sets": None,
+                "reps_per_set": None,
+                "average_power_watts": None,
+                "average_heartrate_bpm": None,
+                "difficulty_1_to_10": 3,
+                "pain_flag": False,
+                "notes": "Added during review.",
+                "matched_recommendation_id": None,
+                "match_confidence": 0,
+                "assumptions": [],
+            }
+        )
+    )
+    result = process_daily_workout_log(
+        db,
+        settings,
+        TARGET,
+        preview.raw_text,
+        extraction=reviewed,
+    )
+
+    assert result.extraction.workouts[0].workout_name == "Corrected dumbbell bench press"
+    entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET)))
+    assert any(entry.exercise_name == "Short recovery run" for entry in entries)
+    assert not any(entry.exercise_name == "Evening yoga" for entry in entries)
+    workout_log = db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == TARGET))
+    assert workout_log and workout_log.model.endswith(":reviewed")
+
+
 def test_workout_log_reanalysis_preserves_later_history_correction(
     db: Session, settings: Settings, seeded
 ) -> None:
@@ -284,28 +349,42 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_settings] = lambda: api_settings
 
-    async def make_requests() -> tuple[Response, Response, Response]:
+    async def make_requests() -> tuple[Response, Response, Response, Response]:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
             unauthenticated_response = await client.post(
-                "/api/v1/today/workout/log", json={"text": "Bench press."}
+                "/api/v1/today/workout/log/analyze", json={"text": "Bench press."}
+            )
+            analysis_response = await client.post(
+                "/api/v1/today/workout/log/analyze",
+                headers={"Authorization": f"Bearer {raw_token}"},
+                json={"text": "Bench press."},
             )
             authenticated_response = await client.post(
                 "/api/v1/today/workout/log",
                 headers={"Authorization": f"Bearer {raw_token}"},
-                json={"text": "Bench press."},
+                json={
+                    "text": "Bench press.",
+                    "extraction": analysis_response.json()["extraction"],
+                },
             )
             today_response = await client.get(
                 "/api/v1/today", headers={"Authorization": f"Bearer {raw_token}"}
             )
-        return unauthenticated_response, authenticated_response, today_response
+        return (
+            unauthenticated_response,
+            analysis_response,
+            authenticated_response,
+            today_response,
+        )
 
     try:
-        unauthenticated, response, today_response = asyncio.run(make_requests())
+        unauthenticated, analysis_response, response, today_response = asyncio.run(make_requests())
     finally:
         app.dependency_overrides.clear()
 
     assert unauthenticated.status_code == 401
+    assert analysis_response.status_code == 200
     assert response.status_code == 200
     assert response.json()["matched_recommendation_ids"] == [
         recommendation.planned_recommendation_id

@@ -77,13 +77,24 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .food-log-card form, .workout-log-card form { display: grid; gap: 0.8rem; }
 .food-log-card textarea, .workout-log-card textarea { min-height: 115px; }
 .workout-log-card { border-color: #b8c8d3; background: linear-gradient(145deg, #faf9f4, #edf2f4); }
+.workout-log-card > .card-heading { align-items: flex-start; }
+.workout-log-card > .card-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; }
+.workout-log-card > .card-heading .eyebrow { margin-bottom: 0; }
+.workout-review { display: grid; gap: 1rem; margin-top: 1.3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.workout-review h3 { margin-bottom: 0.25rem; font-family: "Fraunces", serif; font-size: 1.35rem; }
+.workout-editor { display: grid; gap: 0.9rem; padding: 1rem; border: 1px solid #cbd8df; border-radius: 15px; background: rgba(255,255,255,0.62); }
+.workout-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.review-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
+.empty-review { margin: 0; padding: 0.9rem; border-radius: 11px; color: #675c3c; background: #f1ead6; }
+.text-button.danger { color: #a6402b; }
+.success.standalone { margin: 1rem 0 0; }
 .food-log-submit { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .food-log-submit small { max-width: 62%; }
-.meal-regeneration-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.25rem; }
-.meal-regeneration-card > div { display: grid; gap: 0.25rem; }
-.meal-regeneration-card .eyebrow { margin: 0; }
-.meal-regeneration-card small { display: block; }
-.meal-regeneration-card .error { grid-column: 1 / -1; margin: 0; }
+.meal-regeneration-card, .workout-regeneration-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.25rem; }
+.meal-regeneration-card > div, .workout-regeneration-card > div { display: grid; gap: 0.25rem; }
+.meal-regeneration-card .eyebrow, .workout-regeneration-card .eyebrow { margin: 0; }
+.meal-regeneration-card small, .workout-regeneration-card small { display: block; }
+.meal-regeneration-card .error, .workout-regeneration-card .error { grid-column: 1 / -1; margin: 0; }
 .extraction-result { display: grid; gap: 0.8rem; margin-top: 1.3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
 .extraction-summary { margin: 0; font-weight: 600; }
 .recorded-meal { padding: 1rem; border: 1px solid #d5ded5; border-radius: 14px; background: rgba(255,255,255,0.58); }
@@ -185,12 +196,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.4rem 0; }
 }
 
 @media (max-width: 520px) {
-  .actual-grid, .form-grid, .completion-row { grid-template-columns: 1fr; }
+  .actual-grid, .form-grid, .completion-row, .workout-editor-grid { grid-template-columns: 1fr; }
   .chat-card form { grid-template-columns: 1fr; }
   .card { padding: 1.1rem; border-radius: 16px; }
   .food-log-submit { align-items: stretch; flex-direction: column; }
   .food-log-submit small { max-width: none; }
   .component-list li { grid-template-columns: 1fr auto; }
   .component-list li small { grid-column: 1 / -1; }
-  .meal-regeneration-card { grid-template-columns: 1fr; }
+  .meal-regeneration-card, .workout-regeneration-card { grid-template-columns: 1fr; }
 }

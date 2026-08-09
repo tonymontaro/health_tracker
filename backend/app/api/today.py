@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,7 @@ from app.db.models import (
     DailyPlan,
     DailyWorkoutLog,
     NutritionEntry,
+    StravaConnection,
     UserProfile,
     WorkoutEntry,
 )
@@ -23,7 +24,12 @@ from app.schemas.api import (
     WorkoutCompletionRequest,
 )
 from app.schemas.food_log import FoodLogRequest, FoodLogResponse
-from app.schemas.workout_log import WorkoutLogRequest, WorkoutLogResponse
+from app.schemas.workout_log import (
+    WorkoutLogAnalysisResponse,
+    WorkoutLogRequest,
+    WorkoutLogResponse,
+    WorkoutLogSubmissionRequest,
+)
 from app.services.emergency_plate import EMERGENCY_PLATE
 from app.services.food_log import (
     FoodLogExtractionError,
@@ -38,10 +44,19 @@ from app.services.nutrition_regeneration import (
     regenerate_nutrition,
 )
 from app.services.planner.orchestrator import generate_daily_plan
+from app.services.strava import (
+    StravaIntegrationError,
+    sync_connection_for_date,
+)
 from app.services.workout_log import (
     WorkoutLogExtractionError,
+    analyze_daily_workout_log,
     process_daily_workout_log,
     serialize_workout_log,
+)
+from app.services.workout_regeneration import (
+    WorkoutRegenerationError,
+    regenerate_workout,
 )
 
 router = APIRouter(prefix="/today", tags=["today"])
@@ -367,17 +382,55 @@ def skip_workout(
     return [serialize_workout(item) for item in entries]
 
 
-@router.post("/workout/log", response_model=WorkoutLogResponse)
-def record_workout_log(
+@router.post("/workout/regenerate")
+def regenerate_today_workout(
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    plan = _plan(db, settings)
+    connection = db.scalar(
+        select(StravaConnection).where(StravaConnection.account_id == auth.account.id)
+    )
+    if connection is not None:
+        if connection.status != "connected":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Reconnect Strava before regenerating from refreshed activity history.",
+            )
+        try:
+            sync_connection_for_date(
+                db,
+                settings,
+                connection,
+                plan.plan_date - timedelta(days=1),
+            )
+        except StravaIntegrationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Strava history refresh failed: {exc}. The workout was not regenerated.",
+            ) from exc
+    try:
+        regenerate_workout(db, settings, plan)
+    except WorkoutRegenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return plan.current_plan_json
+
+
+@router.post("/workout/log/analyze", response_model=WorkoutLogAnalysisResponse)
+def analyze_workout_log(
     payload: WorkoutLogRequest,
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> WorkoutLogResponse:
+) -> WorkoutLogAnalysisResponse:
     target = local_today(settings)
     _plan(db, settings)
     try:
-        return process_daily_workout_log(db, settings, target, payload.text)
+        return analyze_daily_workout_log(db, settings, target, payload.text)
     except RuntimeError as exc:
         if str(exc) == "OPENAI_API_KEY is not configured":
             raise HTTPException(
@@ -390,6 +443,30 @@ def record_workout_log(
                 detail=str(exc),
             ) from exc
         raise
+
+
+@router.post("/workout/log", response_model=WorkoutLogResponse)
+def record_workout_log(
+    payload: WorkoutLogSubmissionRequest,
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> WorkoutLogResponse:
+    target = local_today(settings)
+    _plan(db, settings)
+    try:
+        return process_daily_workout_log(
+            db,
+            settings,
+            target,
+            payload.text,
+            extraction=payload.extraction,
+        )
+    except WorkoutLogExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/workout/{recommendation_id}/replace")

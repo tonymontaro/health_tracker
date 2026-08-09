@@ -76,15 +76,24 @@ export type DailyWorkoutLog = {
   id: string;
   date: string;
   raw_text: string;
-  extraction: {
-    did_no_workout: boolean;
-    workouts: ExtractedWorkout[];
-    summary: string;
-    assumptions: string[];
-  };
+  extraction: WorkoutLogExtraction;
   model: string;
   status: string;
   updated_at: string;
+};
+
+export type WorkoutLogExtraction = {
+  did_no_workout: boolean;
+  workouts: ExtractedWorkout[];
+  summary: string;
+  assumptions: string[];
+};
+
+export type StravaSyncResult = {
+  fetched: number;
+  created: number;
+  updated: number;
+  matched: number;
 };
 
 export type StravaIntegration = {

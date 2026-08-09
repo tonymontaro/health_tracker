@@ -1,7 +1,7 @@
 import base64
 import hmac
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from typing import Any, Protocol
 from urllib.parse import urlencode
@@ -63,7 +63,13 @@ class StravaProvider(Protocol):
     def refresh(self, refresh_token: str) -> dict[str, Any]: ...
 
     def list_activities(
-        self, access_token: str, *, after: int, page: int, per_page: int
+        self,
+        access_token: str,
+        *,
+        after: int,
+        before: int | None,
+        page: int,
+        per_page: int,
     ) -> list[dict[str, Any]]: ...
 
     def get_activity(self, access_token: str, activity_id: int) -> dict[str, Any]: ...
@@ -110,14 +116,23 @@ class StravaClient:
         )
 
     def list_activities(
-        self, access_token: str, *, after: int, page: int, per_page: int
+        self,
+        access_token: str,
+        *,
+        after: int,
+        before: int | None,
+        page: int,
+        per_page: int,
     ) -> list[dict[str, Any]]:
+        params = {"after": after, "page": page, "per_page": per_page}
+        if before is not None:
+            params["before"] = before
         payload = self._json(
             self._request(
                 "GET",
                 f"{STRAVA_API_URL}/athlete/activities",
                 headers={"Authorization": f"Bearer {access_token}"},
-                params={"after": after, "page": page, "per_page": per_page},
+                params=params,
                 timeout=self.timeout,
             )
         )
@@ -317,58 +332,61 @@ def sync_connection(
             else settings.strava_sync_lookback_days
         )
         after = int((current - timedelta(days=days)).timestamp())
-        payloads: list[dict[str, Any]] = []
-        activity_limit = settings.strava_sync_max_activities_per_run
-        for page in range(1, 51):
-            per_page = min(200, activity_limit - len(payloads))
-            batch = active_provider.list_activities(
-                access_token, after=after, page=page, per_page=per_page
-            )
-            payloads.extend(batch)
-            if len(batch) < per_page or len(payloads) >= activity_limit:
-                break
-        else:
-            raise StravaIntegrationError("Strava activity pagination exceeded the safe limit")
-
-        locked_connection = db.scalar(
-            select(StravaConnection).where(StravaConnection.id == connection.id).with_for_update()
+        payloads = _fetch_activity_payloads(
+            active_provider,
+            access_token,
+            after=after,
+            before=None,
+            limit=settings.strava_sync_max_activities_per_run,
         )
-        if locked_connection is None:
-            raise StravaIntegrationError("The Strava connection no longer exists")
-        connection = locked_connection
-        created = 0
-        updated = 0
-        matched = 0
-        affected_dates: set[date] = set()
-        for payload in payloads:
-            activity, was_created = _upsert_activity(db, settings, connection, payload, current)
-            activity_matches = _materialize_activity(db, activity)
-            created += int(was_created)
-            updated += int(not was_created)
-            matched += activity_matches
-            affected_dates.add(activity.activity_date)
-        profile = db.scalar(select(UserProfile))
-        if profile and affected_dates:
-            summary_date = current.astimezone(ZoneInfo(settings.app_timezone)).date()
-            recalculate_derived_summary(db, profile, max(summary_date, *affected_dates))
-        connection.last_synced_at = current
-        connection.last_error = None
-        connection.status = "connected"
-        db.commit()
-        return {
-            "fetched": len(payloads),
-            "created": created,
-            "updated": updated,
-            "matched": matched,
-        }
+        return _persist_activity_payloads(
+            db,
+            settings,
+            connection,
+            payloads,
+            current,
+            update_last_synced=True,
+        )
     except Exception as exc:
-        db.rollback()
-        failed_connection = db.get(StravaConnection, connection.id)
-        if failed_connection:
-            failed_connection.last_error = f"{type(exc).__name__}: {str(exc)[:1000]}"
-            if "401" in str(exc):
-                failed_connection.status = "reauthorization_required"
-            db.commit()
+        _record_sync_failure(db, connection.id, exc)
+        raise
+
+
+def sync_connection_for_date(
+    db: Session,
+    settings: Settings,
+    connection: StravaConnection,
+    target_date: date,
+    *,
+    provider: StravaProvider | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    active_provider = provider or StravaClient(settings)
+    current = now or datetime.now(UTC)
+    timezone = ZoneInfo(settings.app_timezone)
+    local_start = datetime.combine(target_date, time.min, tzinfo=timezone)
+    local_end = datetime.combine(target_date + timedelta(days=1), time.min, tzinfo=timezone)
+    start = local_start.astimezone(UTC)
+    end = local_end.astimezone(UTC)
+    try:
+        access_token = _valid_access_token(db, settings, connection, active_provider, current)
+        payloads = _fetch_activity_payloads(
+            active_provider,
+            access_token,
+            after=int(start.timestamp()) - 1,
+            before=int(end.timestamp()),
+            limit=settings.strava_sync_max_activities_per_run,
+        )
+        return _persist_activity_payloads(
+            db,
+            settings,
+            connection,
+            payloads,
+            current,
+            update_last_synced=False,
+        )
+    except Exception as exc:
+        _record_sync_failure(db, connection.id, exc)
         raise
 
 
@@ -592,6 +610,85 @@ def _valid_access_token(
     locked_connection.access_token_expires_at = datetime.fromtimestamp(int(expires_at), UTC)
     db.commit()
     return access_token
+
+
+def _fetch_activity_payloads(
+    provider: StravaProvider,
+    access_token: str,
+    *,
+    after: int,
+    before: int | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for page in range(1, 51):
+        per_page = min(200, limit - len(payloads))
+        batch = provider.list_activities(
+            access_token,
+            after=after,
+            before=before,
+            page=page,
+            per_page=per_page,
+        )
+        payloads.extend(batch)
+        if len(batch) < per_page or len(payloads) >= limit:
+            break
+    else:
+        raise StravaIntegrationError("Strava activity pagination exceeded the safe limit")
+    return payloads
+
+
+def _persist_activity_payloads(
+    db: Session,
+    settings: Settings,
+    connection: StravaConnection,
+    payloads: list[dict[str, Any]],
+    synced_at: datetime,
+    *,
+    update_last_synced: bool,
+) -> dict[str, int]:
+    locked_connection = db.scalar(
+        select(StravaConnection).where(StravaConnection.id == connection.id).with_for_update()
+    )
+    if locked_connection is None:
+        raise StravaIntegrationError("The Strava connection no longer exists")
+    created = 0
+    updated = 0
+    matched = 0
+    affected_dates: set[date] = set()
+    for payload in payloads:
+        activity, was_created = _upsert_activity(
+            db, settings, locked_connection, payload, synced_at
+        )
+        matched += _materialize_activity(db, activity)
+        created += int(was_created)
+        updated += int(not was_created)
+        affected_dates.add(activity.activity_date)
+    profile = db.scalar(select(UserProfile))
+    if profile and affected_dates:
+        summary_date = synced_at.astimezone(ZoneInfo(settings.app_timezone)).date()
+        recalculate_derived_summary(db, profile, max(summary_date, *affected_dates))
+    if update_last_synced:
+        locked_connection.last_synced_at = synced_at
+    locked_connection.last_error = None
+    locked_connection.status = "connected"
+    db.commit()
+    return {
+        "fetched": len(payloads),
+        "created": created,
+        "updated": updated,
+        "matched": matched,
+    }
+
+
+def _record_sync_failure(db: Session, connection_id: UUID, exc: Exception) -> None:
+    db.rollback()
+    failed_connection = db.get(StravaConnection, connection_id)
+    if failed_connection:
+        failed_connection.last_error = f"{type(exc).__name__}: {str(exc)[:1000]}"
+        if "401" in str(exc):
+            failed_connection.status = "reauthorization_required"
+        db.commit()
 
 
 def _upsert_activity(
