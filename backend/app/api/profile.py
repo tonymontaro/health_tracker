@@ -74,10 +74,12 @@ def get_runtime_settings(
         "app_timezone": settings.app_timezone,
         "planner_model": settings.openai_planner_model,
         "qa_model": settings.openai_qa_model,
+        "workout_log_model": settings.openai_workout_log_model,
         "reasoning_effort": settings.openai_reasoning_effort,
         "openai_configured": bool(settings.openai_key_value),
         "email_provider": "resend",
         "resend_configured": settings.resend_configured,
+        "strava_configured": settings.strava_configured,
         "coop_online_minimum_chf": settings.coop_online_minimum_chf,
         "migros_online_minimum_chf": settings.migros_online_minimum_chf,
     }

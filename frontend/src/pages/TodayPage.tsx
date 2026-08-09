@@ -124,12 +124,71 @@ function MealRegenerationCard({ today }: { today: Today }) {
   );
 }
 
+function actualWorkoutText(actual?: Record<string, unknown> | null): string {
+  if (!actual) return "";
+  const parts: string[] = [];
+  if (typeof actual.distance_km === "number") parts.push(`${actual.distance_km.toFixed(2)} km`);
+  if (typeof actual.duration_seconds === "number") parts.push(`${Math.round(actual.duration_seconds / 60)} min`);
+  if (typeof actual.load_kg === "number") parts.push(`${actual.load_kg} kg`);
+  if (Array.isArray(actual.reps_per_set)) parts.push(`${actual.reps_per_set.join(" / ")} reps`);
+  if (typeof actual.average_power_watts === "number") parts.push(`${Math.round(actual.average_power_watts)} W avg`);
+  if (typeof actual.average_heartrate_bpm === "number") parts.push(`${Math.round(actual.average_heartrate_bpm)} bpm avg`);
+  return parts.join(" · ");
+}
+
+function WorkoutLogCard({ today }: { today: Today }) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(today.workout_log?.raw_text ?? "");
+  const workoutLog = today.workout_log;
+  const save = useMutation({
+    mutationFn: () => api("/today/workout/log", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+      ]);
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (text.trim()) save.mutate();
+  }
+  return (
+    <section className="card workout-log-card">
+      <div className="card-heading"><p className="eyebrow">What I trained today</p>{workoutLog && <StatusPill status="processed" />}</div>
+      <h2>Describe the workout in your own words</h2>
+      <p>Use this instead of the structured completion fields. AI will turn your description into specific exercises and actual results, then match them to today's recommendations where appropriate.</p>
+      <form onSubmit={submit}>
+        <label>Workout details<textarea value={text} maxLength={5000} onChange={(event) => setText(event.target.value)} placeholder="Ran 6.2 km in 38 minutes, then did 3 sets of 8 pull-ups. Difficulty 6/10 and no pain." /></label>
+        <div className="food-log-submit"><small>Only this text and today's workout suggestions are sent for analysis. Existing Strava evidence is preserved.</small><button className="primary" disabled={save.isPending || !text.trim()}>{save.isPending ? "Analyzing..." : workoutLog ? "Re-analyze and replace record" : "Analyze and record"}</button></div>
+      </form>
+      {save.error && <p className="error">{save.error.message}</p>}
+      {workoutLog && <div className="extraction-result">
+        <p className="extraction-summary">{workoutLog.extraction.summary}</p>
+        {workoutLog.extraction.did_no_workout && <p>No workout was recorded.</p>}
+        {workoutLog.extraction.workouts.map((workout, index) => <article className="recorded-workout" key={`${workout.workout_name}-${index}`}>
+          <div className="card-heading"><div><small>{workout.exercise_type}</small><h3>{workout.workout_name}</h3></div>{workout.matched_recommendation_id && <StatusPill status="completed" />}</div>
+          <p>{actualWorkoutText(workout as unknown as Record<string, unknown>)}</p>
+          <div className="meta">{workout.difficulty_1_to_10 && <span>Difficulty {workout.difficulty_1_to_10}/10</span>}{workout.matched_recommendation_id && <span>Matched recommendation · {Math.round(workout.match_confidence * 100)}%</span>}{workout.pain_flag && <span>Pain recorded</span>}</div>
+          {workout.notes && <small>{workout.notes}</small>}
+        </article>)}
+        {workoutLog.extraction.assumptions.length > 0 && <p className="assumption-note"><strong>Assumptions:</strong> {workoutLog.extraction.assumptions.join(" ")}</p>}
+      </div>}
+    </section>
+  );
+}
+
 function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternative: () => void }) {
   const queryClient = useQueryClient();
   const [difficulty, setDifficulty] = useState(5);
   const [pain, setPain] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
+  const workoutLogLocked = today.workout_log !== null;
   const complete = useMutation({
     mutationFn: () => {
       const results: Record<string, Record<string, unknown>> = {};
@@ -173,11 +232,13 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
       <h2>{today.workout.title}</h2>
       {today.workout.exercises.map((exercise) => {
         const status = today.workout_status[exercise.recommendation_id]?.status ?? "planned";
+        const recorded = today.workout_status[exercise.recommendation_id];
         const strength = exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight";
         return (
           <div className="exercise" key={exercise.recommendation_id}>
             <div><strong>{exercise.exercise_name}</strong> <StatusPill status={status} /></div>
             <p className="prescription">{exerciseText(exercise)}</p><p>{exercise.instructions}</p>
+            {recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
             <div className="actual-grid">
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
               <label>{strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
@@ -191,10 +252,11 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
       </div>
       <label>Notes, optional<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
       <div className="actions">
-        <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending}>Save completion</button>
-        <button className="quiet small" onClick={() => skip.mutate()} disabled={skip.isPending}>Skip workout</button>
+        <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending || workoutLogLocked}>Save completion</button>
+        <button className="quiet small" onClick={() => skip.mutate()} disabled={skip.isPending || workoutLogLocked}>Skip workout</button>
         <button className="quiet small" onClick={onAskAlternative}>Ask for an alternative</button>
       </div>
+      {workoutLogLocked && <p className="locked-note">Structured actions are locked because today's workout text is the actual record.</p>}
       {(complete.error || skip.error) && <p className="error">{complete.error?.message ?? skip.error?.message}</p>}
     </section>
   );
@@ -235,11 +297,13 @@ export function TodayPage() {
       <section className="status-hero"><div><p className="eyebrow">Current status</p><h2>{data.current_status}</h2><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></div><div className="hero-orb" /></section>
       <div className="today-grid">
         <div className="main-column">
-          <FoodLogCard today={data} />
+          <FoodLogCard key={`food-${data.date}`} today={data} />
           <MealRegenerationCard today={data} />
           <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
           {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
           <WorkoutCard today={data} onAskAlternative={() => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
+          <WorkoutLogCard key={`workout-${data.date}`} today={data} />
+          {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities today</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
         </div>
         <aside className="side-column">
           <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>

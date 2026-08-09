@@ -67,11 +67,13 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .status-skipped, .status-skipped_assumed { color: #8d4b32; background: #f4dfd5; }
 .status-assumed_consumed { color: #806b2f; background: #f1e9c9; }
 .status-discarded_by_food_log { color: #765147; background: #eee0db; }
+.status-skipped_by_workout_log { color: #765147; background: #eee0db; }
 .status-matched_by_food_log, .status-processed { color: #176342; background: #d8eddf; }
 .locked-note { margin: 0.8rem 0 0; color: #765147; font-size: 0.78rem; }
 .food-log-card { border-color: #b7cbbf; background: linear-gradient(145deg, #faf9f4, #eef4ed); }
-.food-log-card form { display: grid; gap: 0.8rem; }
-.food-log-card textarea { min-height: 115px; }
+.food-log-card form, .workout-log-card form { display: grid; gap: 0.8rem; }
+.food-log-card textarea, .workout-log-card textarea { min-height: 115px; }
+.workout-log-card { border-color: #b8c8d3; background: linear-gradient(145deg, #faf9f4, #edf2f4); }
 .food-log-submit { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .food-log-submit small { max-width: 62%; }
 .meal-regeneration-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.25rem; }
@@ -82,6 +84,13 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .extraction-result { display: grid; gap: 0.8rem; margin-top: 1.3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
 .extraction-summary { margin: 0; font-weight: 600; }
 .recorded-meal { padding: 1rem; border: 1px solid #d5ded5; border-radius: 14px; background: rgba(255,255,255,0.58); }
+.recorded-workout { padding: 1rem; border: 1px solid #d4dfe5; border-radius: 14px; background: rgba(255,255,255,0.58); }
+.recorded-workout h3 { margin: 0.2rem 0 0; }
+.recorded-actual { padding: 0.7rem; border-radius: 10px; color: #315d50; background: #e7efe9; font-size: 0.84rem; }
+.recorded-activity { display: grid; gap: 0.35rem; padding: 0.8rem 0; border-bottom: 1px solid var(--line); }
+.recorded-activity > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.integration-panel { display: grid; gap: 0.7rem; }
+.integration-panel .actions { margin-top: 0.25rem; }
 .recorded-meal h3 { margin: 0.2rem 0 0; }
 .recorded-meal .card-heading > strong { color: var(--forest); font-size: 0.86rem; text-align: right; }
 .component-list { display: grid; gap: 0.4rem; padding: 0; margin: 1rem 0; list-style: none; }

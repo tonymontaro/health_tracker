@@ -30,14 +30,20 @@ def calculate_training_summary(db: Session, as_of: date) -> dict[str, Any]:
         if kind not in {"strength", "bodyweight"}:
             continue
         actual = entry.actual_json or {}
-        load = float(
-            actual.get("load_kg")
-            or actual.get("external_load_kg")
-            or entry.prescription_json.get("load_kg")
-            or entry.prescription_json.get("external_load_kg")
-            or 0
-        )
-        reps = actual.get("reps_per_set") or entry.prescription_json.get("reps_per_set") or []
+        if entry.source == "strava":
+            load = float(actual.get("load_kg") or actual.get("external_load_kg") or 0)
+            reps = actual.get("reps_per_set") or []
+        else:
+            load = float(
+                actual.get("load_kg")
+                or actual.get("external_load_kg")
+                or entry.prescription_json.get("load_kg")
+                or entry.prescription_json.get("external_load_kg")
+                or 0
+            )
+            reps = actual.get("reps_per_set") or entry.prescription_json.get("reps_per_set") or []
+        if not load or not reps:
+            continue
         total_reps = sum(int(value) for value in reps)
         strength_volume[entry.exercise_name] = round(
             strength_volume.get(entry.exercise_name, 0) + load * total_reps, 1
@@ -89,10 +95,12 @@ def calculate_training_summary(db: Session, as_of: date) -> dict[str, Any]:
                 "date": entry.entry_date.isoformat(),
                 "exercise": entry.exercise_name,
                 "status": entry.status,
+                "source": entry.source,
                 "difficulty": entry.difficulty_1_to_10,
                 "prescription": entry.prescription_json,
                 "actual": entry.actual_json,
                 "pain": entry.pain_flag,
+                "notes": entry.notes,
             }
             for entry in sorted(entries, key=lambda item: item.entry_date, reverse=True)[:12]
         ],

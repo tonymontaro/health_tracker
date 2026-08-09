@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     DailyFoodLog,
     DailyPlan,
+    DailyWorkoutLog,
     NutritionEntry,
     PlanModification,
     ProfileSnapshot,
@@ -20,6 +21,7 @@ from app.services.food_log import serialize_food_log
 from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 from app.services.planner.domain import validate_plan
+from app.services.workout_log import serialize_workout_log
 
 
 def reconcile_day(db: Session, target_date: date) -> dict[str, int]:
@@ -98,6 +100,7 @@ def correct_workout_entry(
         if field in changes and changes[field] is not None:
             setattr(entry, model_field, changes[field])
     entry.source = "history_correction"
+    entry.workout_log_id = None
     profile = db.scalar(select(UserProfile))
     if profile:
         recalculate_derived_summary(db, profile, as_of)
@@ -109,6 +112,7 @@ def correct_workout_entry(
 def history_day(db: Session, target_date: date) -> dict[str, Any]:
     plan = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date))
     food_log = db.scalar(select(DailyFoodLog).where(DailyFoodLog.log_date == target_date))
+    workout_log = db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == target_date))
     nutrition = list(
         db.scalars(
             select(NutritionEntry)
@@ -140,6 +144,7 @@ def history_day(db: Session, target_date: date) -> dict[str, Any]:
             else None
         ),
         "food_log": serialize_food_log(food_log),
+        "workout_log": serialize_workout_log(workout_log),
     }
 
 
@@ -171,6 +176,7 @@ def serialize_workout(entry: WorkoutEntry) -> dict[str, Any]:
         "source": entry.source,
         "pain_flag": entry.pain_flag,
         "notes": entry.notes,
+        "workout_log_id": str(entry.workout_log_id) if entry.workout_log_id else None,
     }
 
 

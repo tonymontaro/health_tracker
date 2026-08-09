@@ -13,7 +13,8 @@ React web app -----------+
 Chrome extension --------+---> FastAPI ---> PostgreSQL
 Scheduled job commands --+       |   |
                                  |   +---> Resend Email API
-                                 +-------> OpenAI Responses API
+                                 |   +---> OpenAI Responses API
+                                 +-------> Strava API
 ```
 
 PostgreSQL is the source of truth.
@@ -70,7 +71,8 @@ Important groups are:
 - PostgreSQL: `DATABASE_URL`
 - Public URLs: `APP_BASE_URL`, `API_BASE_URL`
 - Time: `APP_TIMEZONE`
-- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
+- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
+- Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID`, `STRAVA_INITIAL_SYNC_DAYS`, `STRAVA_SYNC_LOOKBACK_DAYS`, `STRAVA_SYNC_INTERVAL_MINUTES`
 - Email: `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`
 - Security: `SESSION_SECRET`, `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, `EXTENSION_API_TOKEN`
 - Shopping: `COOP_ONLINE_MINIMUM_CHF`, `MIGROS_ONLINE_MINIMUM_CHF`
@@ -265,6 +267,53 @@ After successful AI extraction, every nutrition recommendation for that date is 
 Submitting revised text replaces only the prior AI-derived entries for that day and safely reverses their inventory deltas before applying the new ones.
 The original daily plan remains immutable.
 If OpenAI is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
+
+## Strava activity import
+
+Create an API application in Strava and set its authorization callback domain to the hostname from `API_BASE_URL`.
+Configure `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`, restart the backend, then connect the athlete from the Settings page.
+Do not configure the access and refresh tokens displayed in Strava's application settings.
+Those tokens represent an existing athlete grant and may not include activity access; the application obtains and securely stores the correct short-lived token pair through OAuth consent.
+The OAuth callback is `/api/v1/integrations/strava/callback`.
+The integration requests read-only access to all athlete activities, including activities whose visibility is Only You.
+
+The first sync imports the configured recent history window, which defaults to 90 days because recommendation context uses the latest 28 days.
+Later syncs re-read a 35-day lookback window so delayed uploads and edited activities are updated idempotently.
+Set `STRAVA_SYNC_MAX_ACTIVITIES_PER_RUN=2` while validating a new connection to cap each sync to the two newest activities, then raise or remove that override after testing.
+The scheduler checks for due syncs before morning planning and no more often than the configured interval.
+The Settings page also provides a manual sync control.
+
+Runs, rides, and recovery activities are matched by activity type and workload to an unresolved recommendation for the same application-local date.
+A Strava strength session can complete the day's unresolved strength recommendations, but it does not invent exercise-level loads or repetitions that Strava did not provide.
+An activity that does not match the plan becomes a separate completed workout and is still included in future recommendation context.
+Imported values preserve distance, duration, elevation, heart rate, power, device, and activity provenance when Strava supplies them.
+Raw Strava location data is never included in AI planning context.
+
+OAuth access and refresh tokens are encrypted in PostgreSQL with a key derived from `SESSION_SECRET`.
+Changing `SESSION_SECRET` requires reconnecting Strava.
+Disconnecting revokes the refresh token and removes Strava-derived activity records while restoring the prior state of matched recommendations.
+
+### Optional Strava webhooks
+
+Scheduled sync is sufficient for automatic imports.
+For near-real-time create, update, delete, and deauthorization handling, configure `STRAVA_WEBHOOK_VERIFY_TOKEN` and register this callback URL with Strava:
+
+```text
+https://your-api.example/api/v1/integrations/strava/webhook
+```
+
+After Strava creates the subscription, set its ID as `STRAVA_WEBHOOK_SUBSCRIPTION_ID` and restart the backend.
+Webhook requests are acknowledged immediately and processed after the response.
+Scheduled sync remains the retry path if webhook processing fails.
+
+## Daily workout recording
+
+The Today page offers structured workout completion and an alternate free-text workout diary.
+The free-text route sends only the diary text and today's workout suggestions to OpenAI Structured Outputs.
+Validated results contain typed activities, measurements, difficulty, pain, notes, assumptions, and optional recommendation matches.
+Matched recommendations become completed, unmatched recommendations become skipped by the diary, and unplanned exercise becomes a separate completed workout.
+Re-analysis atomically replaces only entries still controlled by that diary and preserves later Strava imports or History corrections.
+If OpenAI is unavailable or validation fails, no workout state changes.
 
 ## Key domain rules
 

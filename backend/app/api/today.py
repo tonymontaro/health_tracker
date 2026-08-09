@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
-from app.db.models import DailyFoodLog, DailyPlan, NutritionEntry, UserProfile, WorkoutEntry
+from app.db.models import (
+    DailyFoodLog,
+    DailyPlan,
+    DailyWorkoutLog,
+    NutritionEntry,
+    UserProfile,
+    WorkoutEntry,
+)
 from app.db.session import get_db
 from app.schemas.api import (
     ManualNutritionRequest,
@@ -16,6 +23,7 @@ from app.schemas.api import (
     WorkoutCompletionRequest,
 )
 from app.schemas.food_log import FoodLogRequest, FoodLogResponse
+from app.schemas.workout_log import WorkoutLogRequest, WorkoutLogResponse
 from app.services.emergency_plate import EMERGENCY_PLATE
 from app.services.food_log import (
     FoodLogExtractionError,
@@ -30,6 +38,11 @@ from app.services.nutrition_regeneration import (
     regenerate_nutrition,
 )
 from app.services.planner.orchestrator import generate_daily_plan
+from app.services.workout_log import (
+    WorkoutLogExtractionError,
+    process_daily_workout_log,
+    serialize_workout_log,
+)
 
 router = APIRouter(prefix="/today", tags=["today"])
 
@@ -74,11 +87,40 @@ def _actual_nutrition(db: Session, target: date) -> list[dict[str, Any]]:
     ]
 
 
+def _workout_log(db: Session, target: date) -> DailyWorkoutLog | None:
+    return db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == target))
+
+
+def _actual_workouts(db: Session, target: date) -> list[dict[str, Any]]:
+    return [
+        serialize_workout(entry)
+        for entry in db.scalars(
+            select(WorkoutEntry)
+            .where(
+                WorkoutEntry.entry_date == target,
+                WorkoutEntry.planned_recommendation_id.is_(None),
+            )
+            .order_by(WorkoutEntry.created_at)
+        )
+    ]
+
+
 def _reject_if_food_log_exists(db: Session, target: date) -> None:
     if _food_log(db, target):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Today's food text is authoritative. Re-analyze it or correct the entry in History.",
+        )
+
+
+def _reject_if_workout_log_exists(db: Session, target: date) -> None:
+    if _workout_log(db, target):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Today's workout text is authoritative. Re-analyze it or correct the entry "
+                "in History."
+            ),
         )
 
 
@@ -104,6 +146,8 @@ def get_today(
         "workout_status": workout_status,
         "food_log": serialize_food_log(_food_log(db, plan.plan_date)),
         "actual_nutrition": _actual_nutrition(db, plan.plan_date),
+        "workout_log": serialize_workout_log(_workout_log(db, plan.plan_date)),
+        "actual_workouts": _actual_workouts(db, plan.plan_date),
         "emergency_plate": EMERGENCY_PLATE,
     }
 
@@ -125,6 +169,8 @@ def get_today_details(
         ],
         "workout_entries": list(workout_status.values()),
         "food_log": serialize_food_log(_food_log(db, plan.plan_date)),
+        "workout_log": serialize_workout_log(_workout_log(db, plan.plan_date)),
+        "actual_workouts": _actual_workouts(db, plan.plan_date),
     }
 
 
@@ -275,6 +321,7 @@ def complete_workout(
     if not payload.results:
         raise HTTPException(status_code=422, detail="Actual performance evidence is required")
     target = local_today(settings)
+    _reject_if_workout_log_exists(db, target)
     entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target)))
     changed: list[WorkoutEntry] = []
     for entry in entries:
@@ -287,6 +334,7 @@ def complete_workout(
             entry.pain_flag = payload.pain_flag
             entry.notes = payload.notes
             entry.status = "completed"
+            entry.source = "manual"
             changed.append(entry)
     if not changed:
         raise HTTPException(status_code=404, detail="No matching workout recommendations")
@@ -304,6 +352,7 @@ def skip_workout(
     settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
     target = local_today(settings)
+    _reject_if_workout_log_exists(db, target)
     entries = list(
         db.scalars(
             select(WorkoutEntry).where(
@@ -316,6 +365,31 @@ def skip_workout(
         entry.status = "skipped"
     db.commit()
     return [serialize_workout(item) for item in entries]
+
+
+@router.post("/workout/log", response_model=WorkoutLogResponse)
+def record_workout_log(
+    payload: WorkoutLogRequest,
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> WorkoutLogResponse:
+    target = local_today(settings)
+    _plan(db, settings)
+    try:
+        return process_daily_workout_log(db, settings, target, payload.text)
+    except RuntimeError as exc:
+        if str(exc) == "OPENAI_API_KEY is not configured":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Workout analysis requires an OpenAI API key. Nothing was changed.",
+            ) from exc
+        if isinstance(exc, WorkoutLogExtractionError):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(exc),
+            ) from exc
+        raise
 
 
 @router.post("/workout/{recommendation_id}/replace")

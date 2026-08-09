@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -220,6 +221,18 @@ class DailyFoodLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(40), default="processed")
 
 
+class DailyWorkoutLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "daily_workout_log"
+    __table_args__ = (UniqueConstraint("log_date"),)
+
+    log_date: Mapped[date] = mapped_column(Date, index=True)
+    raw_text: Mapped[str] = mapped_column(Text)
+    extraction_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    previous_entries_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    model: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(40), default="processed")
+
+
 class NutritionEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "nutrition_entry"
     __table_args__ = (UniqueConstraint("entry_date", "planned_recommendation_id"),)
@@ -253,6 +266,85 @@ class WorkoutEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(40))
     pain_flag: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    workout_log_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("daily_workout_log.id", ondelete="SET NULL"), index=True
+    )
+
+
+class StravaOAuthState(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "strava_oauth_state"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user_account.id", ondelete="CASCADE"), index=True
+    )
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class StravaConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "strava_connection"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user_account.id", ondelete="CASCADE"), unique=True
+    )
+    athlete_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    athlete_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    scopes_json: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    access_token_encrypted: Mapped[str] = mapped_column(Text)
+    refresh_token_encrypted: Mapped[str] = mapped_column(Text)
+    access_token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(40), default="connected")
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class StravaActivity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "strava_activity"
+    __table_args__ = (UniqueConstraint("connection_id", "strava_activity_id"),)
+
+    connection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("strava_connection.id", ondelete="CASCADE"), index=True
+    )
+    strava_activity_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    activity_date: Mapped[date] = mapped_column(Date, index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    sport_type: Mapped[str] = mapped_column(String(80))
+    activity_type: Mapped[str] = mapped_column(String(80))
+    distance_m: Mapped[float] = mapped_column(Float, default=0)
+    moving_time_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    elapsed_time_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    elevation_gain_m: Mapped[float] = mapped_column(Float, default=0)
+    average_heartrate: Mapped[float | None] = mapped_column(Float)
+    max_heartrate: Mapped[float | None] = mapped_column(Float)
+    average_watts: Mapped[float | None] = mapped_column(Float)
+    device_name: Mapped[str | None] = mapped_column(String(160))
+    trainer: Mapped[bool] = mapped_column(Boolean, default=False)
+    commute: Mapped[bool] = mapped_column(Boolean, default=False)
+    manual: Mapped[bool] = mapped_column(Boolean, default=False)
+    private: Mapped[bool] = mapped_column(Boolean, default=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class StravaActivityMatch(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "strava_activity_match"
+    __table_args__ = (
+        UniqueConstraint("activity_id", "workout_entry_id"),
+        UniqueConstraint("workout_entry_id"),
+    )
+
+    activity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("strava_activity.id", ondelete="CASCADE"), index=True
+    )
+    workout_entry_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workout_entry.id", ondelete="CASCADE"), index=True
+    )
+    match_kind: Mapped[str] = mapped_column(String(40))
+    match_score: Mapped[float | None] = mapped_column(Float)
+    previous_entry_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class PlanModification(UUIDPrimaryKeyMixin, Base):

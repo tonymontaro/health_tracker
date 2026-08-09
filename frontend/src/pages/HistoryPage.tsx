@@ -1,11 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
-import type { DailyFoodLog, EntryStatus } from "../api/types";
+import type { DailyFoodLog, DailyWorkoutLog, EntryStatus } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
 
 type HistorySummary = { date: string; summary: string; source: string };
-type HistoryDay = { date: string; original_plan: Record<string, unknown> | null; current_plan: Record<string, unknown> | null; nutrition: EntryStatus[]; workouts: EntryStatus[]; profile_snapshot: { short_summary: string } | null; food_log: DailyFoodLog | null };
+type HistoryDay = { date: string; original_plan: Record<string, unknown> | null; current_plan: Record<string, unknown> | null; nutrition: EntryStatus[]; workouts: EntryStatus[]; profile_snapshot: { short_summary: string } | null; food_log: DailyFoodLog | null; workout_log: DailyWorkoutLog | null };
+
+function workoutActualText(actual?: Record<string, unknown> | null): string {
+  if (!actual) return "";
+  if (typeof actual.summary === "string") return actual.summary;
+  const parts: string[] = [];
+  if (typeof actual.distance_km === "number") parts.push(`${actual.distance_km.toFixed(2)} km`);
+  if (typeof actual.duration_seconds === "number") parts.push(`${Math.round(actual.duration_seconds / 60)} min`);
+  if (typeof actual.load_kg === "number") parts.push(`${actual.load_kg} kg`);
+  if (Array.isArray(actual.reps_per_set)) parts.push(`${actual.reps_per_set.join(" / ")} reps`);
+  if (typeof actual.average_power_watts === "number") parts.push(`${Math.round(actual.average_power_watts)} W avg`);
+  return parts.join(" · ");
+}
 
 export function HistoryPage() {
   const queryClient = useQueryClient();
@@ -31,7 +43,7 @@ export function HistoryPage() {
   return (
     <><header className="page-header"><div><p className="eyebrow">Planned versus actual</p><h1>History</h1></div></header>
       <div className="history-layout"><aside className="history-list card">{history.data?.map((item) => <button className={selected === item.date ? "selected" : ""} key={item.date} onClick={() => setSelected(item.date)}><strong>{new Date(`${item.date}T12:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" })}</strong><small>{item.summary}</small></button>)}{history.data?.length === 0 && <p>No plans yet.</p>}</aside>
-        <section className="history-detail">{!selected && <div className="empty-state">Choose a day to inspect its original plan and actual results.</div>}{day.data && <><section className="card"><p className="eyebrow">Profile at recommendation time</p><p>{day.data.profile_snapshot?.short_summary}</p></section>{day.data.food_log && <section className="card"><p className="eyebrow">Food diary text</p><p>{day.data.food_log.raw_text}</p><small>{day.data.food_log.extraction.summary}</small></section>}<section className="card"><p className="eyebrow">Nutrition</p>{day.data.nutrition.map((entry) => <div className="history-entry" key={entry.id}><div><strong>{entry.description}</strong><StatusPill status={entry.status} /></div>{!(["matched_by_food_log", "discarded_by_food_log"].includes(entry.status)) && <div className="actions"><button className="quiet small" onClick={() => patch.mutate({ type: "nutrition", id: entry.id, payload: { status: "confirmed" } })}>Confirm</button><button className="quiet small" onClick={() => patch.mutate({ type: "nutrition", id: entry.id, payload: { status: "skipped" } })}>Mark skipped</button></div>}</div>)}</section><section className="card"><p className="eyebrow">Training</p>{day.data.workouts.length === 0 && <p>Rest day.</p>}{day.data.workouts.map((entry) => <div className="history-entry" key={entry.id}><div><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} />{entry.actual?.summary !== undefined && <small>{String(entry.actual.summary)}</small>}</div><div className="actions"><button className="quiet small" onClick={() => recordWorkout(entry)}>Record actual</button><button className="quiet small" onClick={() => patch.mutate({ type: "workout", id: entry.id, payload: { status: "skipped" } })}>Mark skipped</button></div></div>)}</section><details className="card"><summary>Original recommendation</summary><pre>{JSON.stringify(day.data.original_plan, null, 2)}</pre></details></>}</section>
+        <section className="history-detail">{!selected && <div className="empty-state">Choose a day to inspect its original plan and actual results.</div>}{day.data && <><section className="card"><p className="eyebrow">Profile at recommendation time</p><p>{day.data.profile_snapshot?.short_summary}</p></section>{day.data.food_log && <section className="card"><p className="eyebrow">Food diary text</p><p>{day.data.food_log.raw_text}</p><small>{day.data.food_log.extraction.summary}</small></section>}{day.data.workout_log && <section className="card"><p className="eyebrow">Workout diary text</p><p>{day.data.workout_log.raw_text}</p><small>{day.data.workout_log.extraction.summary}</small></section>}<section className="card"><p className="eyebrow">Nutrition</p>{day.data.nutrition.map((entry) => <div className="history-entry" key={entry.id}><div><strong>{entry.description}</strong><StatusPill status={entry.status} /></div>{!(["matched_by_food_log", "discarded_by_food_log"].includes(entry.status)) && <div className="actions"><button className="quiet small" onClick={() => patch.mutate({ type: "nutrition", id: entry.id, payload: { status: "confirmed" } })}>Confirm</button><button className="quiet small" onClick={() => patch.mutate({ type: "nutrition", id: entry.id, payload: { status: "skipped" } })}>Mark skipped</button></div>}</div>)}</section><section className="card"><p className="eyebrow">Training</p>{day.data.workouts.length === 0 && <p>Rest day.</p>}{day.data.workouts.map((entry) => <div className="history-entry" key={entry.id}><div><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} /><small>{entry.source.replaceAll("_", " ")}</small>{workoutActualText(entry.actual) && <small>{workoutActualText(entry.actual)}</small>}</div><div className="actions"><button className="quiet small" onClick={() => recordWorkout(entry)}>Record actual</button><button className="quiet small" onClick={() => patch.mutate({ type: "workout", id: entry.id, payload: { status: "skipped" } })}>Mark skipped</button></div></div>)}</section><details className="card"><summary>Original recommendation</summary><pre>{JSON.stringify(day.data.original_plan, null, 2)}</pre></details></>}</section>
       </div>{patch.error && <p className="error">{patch.error.message}</p>}</>
   );
 }

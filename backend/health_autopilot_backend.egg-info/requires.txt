@@ -1,6 +1,8 @@
 alembic<2,>=1.16
+cryptography<47,>=46
 email-validator<3,>=2.2
 fastapi<1,>=0.116
+httpx<1,>=0.28
 jinja2<4,>=3.1
 openai<3,>=1.99
 psycopg[binary]<4,>=3.2
@@ -11,7 +13,6 @@ sqlalchemy<3,>=2.0.42
 uvicorn[standard]<1,>=0.35
 
 [dev]
-httpx<1,>=0.28
 mypy<2,>=1.17
 pytest<9,>=8.4
 pytest-cov<7,>=6.2

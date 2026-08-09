@@ -12,6 +12,7 @@ from app.jobs.tasks import (
     send_evening_checkin,
     send_morning_email,
 )
+from app.services.strava import sync_all_connections
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ def run_due_jobs() -> list[str]:
     today = local_now.date()
     completed: list[str] = []
     with SessionLocal() as db:
+        sync_result = sync_all_connections(db, settings)
+        if sync_result["connections"]:
+            completed.append("strava_sync")
         if local_now.hour > 5 or (local_now.hour == 5 and local_now.minute >= 50):
             generate_morning_plan(db, settings, today)
             completed.append("morning_plan")

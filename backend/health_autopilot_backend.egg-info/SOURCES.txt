@@ -7,6 +7,7 @@ app/api/auth.py
 app/api/chat.py
 app/api/deps.py
 app/api/history.py
+app/api/integrations.py
 app/api/profile.py
 app/api/router.py
 app/api/shopping.py
@@ -25,6 +26,7 @@ app/schemas/__init__.py
 app/schemas/api.py
 app/schemas/food_log.py
 app/schemas/plan.py
+app/schemas/workout_log.py
 app/services/__init__.py
 app/services/catalog.py
 app/services/chat.py
@@ -36,6 +38,8 @@ app/services/inventory.py
 app/services/metrics.py
 app/services/nutrition_regeneration.py
 app/services/shopping.py
+app/services/strava.py
+app/services/workout_log.py
 app/services/planner/__init__.py
 app/services/planner/context.py
 app/services/planner/domain.py

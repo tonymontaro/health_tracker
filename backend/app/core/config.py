@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", PROJECT_ROOT / ".emv"),
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         extra="ignore",
         case_sensitive=False,
     )
@@ -30,7 +31,17 @@ class Settings(BaseSettings):
     openai_planner_model: str = "gpt-5.6-terra"
     openai_qa_model: str = "gpt-5.6-luna"
     openai_food_log_model: str = "gpt-5.6-luna"
+    openai_workout_log_model: str = "gpt-5.6-luna"
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "medium"
+
+    strava_client_id: int | None = None
+    strava_client_secret: SecretStr | None = None
+    strava_webhook_verify_token: SecretStr | None = None
+    strava_webhook_subscription_id: int | None = None
+    strava_initial_sync_days: int = Field(default=90, ge=28, le=730)
+    strava_sync_lookback_days: int = Field(default=35, ge=2, le=90)
+    strava_sync_interval_minutes: int = Field(default=15, ge=5, le=1440)
+    strava_sync_max_activities_per_run: int = Field(default=10_000, ge=1, le=10_000)
 
     resend_api_key: SecretStr | None = None
     resend_from: str | None = None
@@ -85,6 +96,22 @@ class Settings(BaseSettings):
     @property
     def resend_key_value(self) -> str | None:
         return self.resend_api_key.get_secret_value() if self.resend_api_key else None
+
+    @property
+    def strava_secret_value(self) -> str | None:
+        return self.strava_client_secret.get_secret_value() if self.strava_client_secret else None
+
+    @property
+    def strava_webhook_token_value(self) -> str | None:
+        return (
+            self.strava_webhook_verify_token.get_secret_value()
+            if self.strava_webhook_verify_token
+            else None
+        )
+
+    @property
+    def strava_configured(self) -> bool:
+        return bool(self.strava_client_id and self.strava_secret_value)
 
     @property
     def resend_configured(self) -> bool:

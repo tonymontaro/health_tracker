@@ -11,6 +11,7 @@ export type EntryStatus = {
   pain_flag?: boolean;
   quantity?: Record<string, unknown>;
   food_log_id?: string | null;
+  workout_log_id?: string | null;
 };
 
 export type FoodComponent = {
@@ -50,6 +51,51 @@ export type DailyFoodLog = {
   model: string;
   status: string;
   updated_at: string;
+};
+
+export type ExtractedWorkout = {
+  workout_name: string;
+  exercise_type: "strength" | "bodyweight" | "run" | "bike" | "recovery";
+  duration_seconds: number | null;
+  distance_km: number | null;
+  load_kg: number | null;
+  external_load_kg: number | null;
+  sets: number | null;
+  reps_per_set: number[] | null;
+  average_power_watts: number | null;
+  average_heartrate_bpm: number | null;
+  difficulty_1_to_10: number | null;
+  pain_flag: boolean;
+  notes: string | null;
+  matched_recommendation_id: string | null;
+  match_confidence: number;
+  assumptions: string[];
+};
+
+export type DailyWorkoutLog = {
+  id: string;
+  date: string;
+  raw_text: string;
+  extraction: {
+    did_no_workout: boolean;
+    workouts: ExtractedWorkout[];
+    summary: string;
+    assumptions: string[];
+  };
+  model: string;
+  status: string;
+  updated_at: string;
+};
+
+export type StravaIntegration = {
+  configured: boolean;
+  connected: boolean;
+  status: string;
+  athlete: { id: number; name: string; profile: string | null } | null;
+  scopes: string[];
+  last_synced_at: string | null;
+  last_error: string | null;
+  activity_count: number;
 };
 
 export type Meal = {
@@ -115,6 +161,8 @@ export type Today = {
   workout_status: Record<string, EntryStatus>;
   food_log: DailyFoodLog | null;
   actual_nutrition: EntryStatus[];
+  workout_log: DailyWorkoutLog | null;
+  actual_workouts: EntryStatus[];
   emergency_plate: {
     name: string;
     description: string;
