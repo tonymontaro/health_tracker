@@ -27,7 +27,11 @@ from app.services.planner.context import (
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
-from app.services.planner.openai_planner import PLANNER_VERSION, OpenAIPlanner
+from app.services.planner.openai_planner import (
+    PLANNER_VERSION,
+    OpenAIPlanner,
+    PlannerProviderError,
+)
 
 REGENERATION_VERSION = f"{PLANNER_VERSION}-workout-regeneration-v1"
 
@@ -56,7 +60,9 @@ def regenerate_workout(
         "instruction": (
             "Regenerate today's workout only. Use the refreshed training history, especially "
             "completed activity from yesterday. Nutrition, shopping, and preparation content "
-            "will be preserved by the application."
+            "will be preserved by the application. A true rest plan must have kind 'rest', "
+            "intensity 'rest', no exercises, and zero duration. If any recovery movement is "
+            "prescribed, use kind 'recovery' with recovery exercises and a positive duration."
         ),
     }
     candidate, source, validation = _generate_candidate(
@@ -122,13 +128,24 @@ def _generate_candidate(
     validation: dict[str, Any] = {"attempts": []}
     if use_ai and settings.openai_key_value:
         planner = OpenAIPlanner(settings)
-        correction: dict[str, Any] = {"instruction": context["workout_regeneration"]["instruction"]}
+        correction: dict[str, Any] | None = None
         for attempt in (1, 2):
             try:
-                candidate = planner.generate(context, correction=correction)
+                candidate = planner.generate(
+                    context,
+                    correction=correction,
+                    prompt_label=f"EXERCISE RECOMMENDATION REGENERATION · ATTEMPT {attempt}",
+                )
                 errors = _candidate_errors(
                     db, candidate, current, profile, refreshed_snapshot, "openai"
                 )
+            except PlannerProviderError as exc:
+                errors = [str(exc)]
+                validation["attempts"].append(
+                    {"attempt": attempt, "source": "openai", "stage": "provider", "errors": errors}
+                )
+                validation["openai_error"] = str(exc)
+                break
             except Exception as exc:  # noqa: BLE001 - bounded provider fallback boundary.
                 errors = [f"{type(exc).__name__}: {str(exc)[:1500]}"]
                 candidate = None

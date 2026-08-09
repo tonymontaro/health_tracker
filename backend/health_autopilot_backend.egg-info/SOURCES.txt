@@ -57,3 +57,5 @@ tests/test_email.py
 tests/test_food_log.py
 tests/test_lifecycle.py
 tests/test_nutrition_regeneration.py
+tests/test_strava.py
+tests/test_workout_log.py

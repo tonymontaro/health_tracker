@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import PlanModification, PlanningRun, WorkoutEntry
+from app.services.planner.openai_planner import OpenAIPlanner, PlannerProviderError
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.workout_regeneration import (
     REGENERATION_VERSION,
@@ -74,10 +75,16 @@ def test_regeneration_uses_refreshed_history_and_preserves_nutrition(
     run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
     assert run
     assert run.context_snapshot_json["training_summary_28d"]["completed_28d"] == 1
-    assert (
-        run.context_snapshot_json["training_summary_28d"]["recent_sessions"][0]["source"]
-        == "strava"
-    )
+    assert run.context_snapshot_json["recent_training_sessions"][0]["source"] == "strava"
+    assert "recent_sessions" not in run.context_snapshot_json["training_summary_28d"]
+    assert "last_run" not in run.context_snapshot_json["training_summary_28d"]
+    assert run.context_snapshot_json["last_run_outside_recent_sessions"] is None
+    assert "recent_training" not in run.context_snapshot_json["profile_snapshot"]
+    assert "recent_nutrition" not in run.context_snapshot_json["profile_snapshot"]
+    assert "recent_meals" not in run.context_snapshot_json["nutrition_summary_14d"]
+    assert "comparable_strength_sessions" not in run.context_snapshot_json
+    assert "comparable_run_sessions" not in run.context_snapshot_json
+    assert "comparable_bike_sessions" not in run.context_snapshot_json
     assert run.context_snapshot_json["workout_regeneration"]["requested"] is True
 
 
@@ -102,3 +109,44 @@ def test_regeneration_rejects_recorded_workout_without_changing_plan(
 
     db.refresh(plan)
     assert plan.current_plan_json == before
+
+
+def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
+    db: Session, settings: Settings, seeded, monkeypatch
+) -> None:
+    plan = generate_daily_plan(db, settings, TARGET, use_ai=False)
+    ai_settings = Settings(
+        DATABASE_URL=settings.database_url,
+        APP_ENV="test",
+        OPENAI_API_KEY="test-key",
+        SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
+    )
+    calls: list[dict[str, object] | None] = []
+
+    def fail(self, context, correction=None, *, prompt_label=None):
+        calls.append(correction)
+        raise PlannerProviderError(
+            "OpenAI request failed after automatic retries · HTTP 520 · transient provider error"
+        )
+
+    monkeypatch.setattr(OpenAIPlanner, "generate", fail)
+
+    regenerate_workout(db, ai_settings, plan)
+
+    assert len(calls) == 1
+    assert calls[0] is None
+    run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
+    assert run
+    assert run.status == "fallback"
+    assert run.validation_result_json["attempts"] == [
+        {
+            "attempt": 1,
+            "source": "openai",
+            "stage": "provider",
+            "errors": [
+                "OpenAI request failed after automatic retries · HTTP 520 · "
+                "transient provider error"
+            ],
+        }
+    ]

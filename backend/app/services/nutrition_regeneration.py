@@ -26,7 +26,11 @@ from app.schemas.plan import (
 from app.services.planner.context import build_planner_context
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
-from app.services.planner.openai_planner import PLANNER_VERSION, OpenAIPlanner
+from app.services.planner.openai_planner import (
+    PLANNER_VERSION,
+    OpenAIPlanner,
+    PlannerProviderError,
+)
 
 REGENERATION_VERSION = f"{PLANNER_VERSION}-nutrition-regeneration-v1"
 EMERGENCY_TEMPLATE_NAME = "Emergency protein plate"
@@ -116,15 +120,22 @@ def _generate_candidate(
     validation: dict[str, Any] = {"attempts": []}
     if use_ai and settings.openai_key_value:
         planner = OpenAIPlanner(settings)
-        correction: dict[str, Any] = {
-            "instruction": context["nutrition_regeneration"]["instruction"],
-            "required_main_meal_count": len(_main_meals(current)),
-            "forbidden_main_meal_templates": sorted(forbidden_names),
-        }
+        correction: dict[str, Any] | None = None
         for attempt in (1, 2):
             try:
-                candidate = planner.generate(context, correction=correction)
+                candidate = planner.generate(
+                    context,
+                    correction=correction,
+                    prompt_label=f"FOOD RECOMMENDATION REGENERATION · ATTEMPT {attempt}",
+                )
                 errors = _candidate_errors(db, candidate, current, profile, forbidden_names)
+            except PlannerProviderError as exc:
+                errors = [str(exc)]
+                validation["attempts"].append(
+                    {"attempt": attempt, "source": "openai", "stage": "provider", "errors": errors}
+                )
+                validation["openai_error"] = str(exc)
+                break
             except Exception as exc:  # noqa: BLE001 - bounded provider fallback boundary.
                 errors = [f"{type(exc).__name__}: {str(exc)[:1500]}"]
                 candidate = None

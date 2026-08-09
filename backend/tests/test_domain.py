@@ -11,6 +11,7 @@ from app.schemas.plan import (
     ExerciseProposal,
     ExerciseType,
     NutritionPlanProposal,
+    WorkoutPlanProposal,
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
@@ -44,6 +45,35 @@ def test_more_than_three_exercises_is_schema_invalid(db: Session, seeded) -> Non
     payload["workout"]["exercises"].append(payload["workout"]["exercises"][0])
     with pytest.raises(ValidationError):
         DailyPlanProposal.model_validate(payload)
+
+
+def test_rest_and_recovery_workouts_have_distinct_valid_shapes() -> None:
+    recovery = ExerciseProposal(
+        exercise_name="Easy mobility",
+        exercise_type=ExerciseType.RECOVERY,
+        duration_seconds=900,
+        expected_difficulty=2,
+        instructions="Move gently.",
+    )
+    active_recovery = WorkoutPlanProposal(
+        kind="recovery",
+        intensity="very_light",
+        title="Easy mobility",
+        exercises=[recovery],
+        expected_duration_minutes=15,
+        summary="Gentle movement only.",
+    )
+
+    assert active_recovery.kind == "recovery"
+    with pytest.raises(ValidationError, match="rest plans cannot contain exercises"):
+        WorkoutPlanProposal(
+            kind="rest",
+            intensity="rest",
+            title="Contradictory rest",
+            exercises=[recovery],
+            expected_duration_minutes=15,
+            summary="Invalid rest with movement.",
+        )
 
 
 def test_gym_only_exercise_is_rejected_on_weekday(db: Session, seeded) -> None:

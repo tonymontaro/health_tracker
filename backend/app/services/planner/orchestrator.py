@@ -21,7 +21,11 @@ from app.services.planner.context import (
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
-from app.services.planner.openai_planner import PLANNER_VERSION, OpenAIPlanner
+from app.services.planner.openai_planner import (
+    PLANNER_VERSION,
+    OpenAIPlanner,
+    PlannerProviderError,
+)
 
 
 def generate_daily_plan(
@@ -62,6 +66,12 @@ def generate_daily_plan(
         for attempt in (1, 2):
             try:
                 candidate = planner.generate(context, correction=correction)
+            except PlannerProviderError as exc:
+                last_error = str(exc)
+                validation["attempts"].append(
+                    {"attempt": attempt, "errors": [last_error], "stage": "provider"}
+                )
+                break
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {str(exc)[:1500]}"
                 validation["attempts"].append(

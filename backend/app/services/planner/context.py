@@ -125,7 +125,24 @@ def build_planner_context(
         .where(ShoppingPlan.week_start == week_start)
         .order_by(ShoppingPlan.created_at.desc())
     )
-    recent_sessions = snapshot.recent_training_summary_json.get("recent_sessions", [])
+    profile_snapshot = snapshot_summary(snapshot).model_dump(mode="json")
+    profile_snapshot.pop("recent_training", None)
+    profile_snapshot.pop("recent_nutrition", None)
+
+    training_summary = dict(snapshot.recent_training_summary_json)
+    recent_sessions = training_summary.pop("recent_sessions", [])
+    last_run = training_summary.pop("last_run", None)
+    last_run_outside_recent_sessions = last_run
+    if last_run and any(
+        session.get("date") == last_run.get("date")
+        and session.get("prescription") == last_run.get("prescription")
+        and session.get("actual") == last_run.get("actual")
+        for session in recent_sessions
+    ):
+        last_run_outside_recent_sessions = None
+
+    nutrition_summary = dict(snapshot.recent_nutrition_summary_json)
+    recent_meals = nutrition_summary.pop("recent_meals", [])
     return {
         "current_date": plan_date.isoformat(),
         "day_of_week": plan_date.strftime("%A"),
@@ -149,21 +166,13 @@ def build_planner_context(
             "office_days": profile.office_days,
             "excluded_exercises": profile.excluded_exercises,
         },
-        "profile_snapshot": snapshot_summary(snapshot).model_dump(mode="json"),
+        "profile_snapshot": profile_snapshot,
         "yesterday_plan": yesterday.current_plan_json if yesterday else None,
-        "nutrition_summary_14d": snapshot.recent_nutrition_summary_json,
-        "training_summary_28d": snapshot.recent_training_summary_json,
-        "comparable_strength_sessions": [
-            item
-            for item in recent_sessions
-            if item["prescription"].get("exercise_type") in {"strength", "bodyweight"}
-        ][:6],
-        "comparable_run_sessions": [
-            item for item in recent_sessions if item["prescription"].get("exercise_type") == "run"
-        ][:6],
-        "comparable_bike_sessions": [
-            item for item in recent_sessions if item["prescription"].get("exercise_type") == "bike"
-        ][:6],
+        "nutrition_summary_14d": nutrition_summary,
+        "recent_nutrition_entries": recent_meals,
+        "training_summary_28d": training_summary,
+        "recent_training_sessions": recent_sessions,
+        "last_run_outside_recent_sessions": last_run_outside_recent_sessions,
         "current_inventory": [
             {
                 "food": food.name,

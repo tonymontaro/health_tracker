@@ -111,7 +111,16 @@ class ExercisePrescription(ExerciseProposal):
 
 
 class WorkoutPlanProposal(BaseModel):
-    kind: Literal["strength", "bodyweight", "run", "bike", "interval_run", "interval_bike", "rest"]
+    kind: Literal[
+        "strength",
+        "bodyweight",
+        "run",
+        "bike",
+        "interval_run",
+        "interval_bike",
+        "recovery",
+        "rest",
+    ]
     intensity: Literal["rest", "very_light", "light", "moderate", "hard"]
     title: str
     exercises: list[ExerciseProposal] = Field(max_length=3)
@@ -120,10 +129,20 @@ class WorkoutPlanProposal(BaseModel):
 
     @model_validator(mode="after")
     def rest_has_no_exercises(self) -> "WorkoutPlanProposal":
-        if self.kind == "rest" and self.exercises:
-            raise ValueError("rest plans cannot contain exercises")
-        if self.kind != "rest" and not self.exercises:
+        if self.kind == "rest":
+            if self.exercises:
+                raise ValueError("rest plans cannot contain exercises")
+            if self.intensity != "rest" or self.expected_duration_minutes != 0:
+                raise ValueError("rest plans require rest intensity and zero duration")
+            return self
+        if not self.exercises:
             raise ValueError("active workout plans require an exercise")
+        if self.intensity == "rest" or self.expected_duration_minutes == 0:
+            raise ValueError("active workout plans require active intensity and positive duration")
+        if self.kind == "recovery" and any(
+            exercise.exercise_type != ExerciseType.RECOVERY for exercise in self.exercises
+        ):
+            raise ValueError("recovery workout plans may only contain recovery exercises")
         return self
 
 
