@@ -7,7 +7,7 @@ type Meal = { recommendation_id: string; template_name: string };
 type Exercise = { recommendation_id: string; exercise_name: string; exercise_type: string; distance_km?: number; pace_seconds_per_km?: number; duration_seconds?: number; load_kg?: number; external_load_kg?: number; reps_per_set?: number[] };
 type Today = { current_status: string; nutrition: { meal_1: Meal; meal_2: Meal | null; fruits: Array<{ name: string }> }; workout: { kind: string; title: string; exercises: Exercise[] }; next_action: { action: string } | null; shopping: { action_needed: boolean; summary: string }; nutrition_status: Record<string, { status: string }> };
 
-const defaults: Settings = { apiUrl: "http://localhost:8000", appUrl: "http://localhost:5173", token: "" };
+const defaults: Settings = { apiUrl: "https://api-health.anthonyngene.com", appUrl: "https://health.anthonyngene.com", token: "" };
 
 function pace(seconds?: number): string {
   if (!seconds) return "";

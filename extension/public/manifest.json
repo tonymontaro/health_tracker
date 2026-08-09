@@ -8,7 +8,6 @@
     "default_title": "Health Autopilot"
   },
   "permissions": ["storage"],
-  "host_permissions": ["http://localhost:8000/*"],
+  "host_permissions": ["https://api-health.anthonyngene.com/*"],
   "optional_host_permissions": ["https://*/*"]
 }
-

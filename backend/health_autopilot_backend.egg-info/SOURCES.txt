@@ -23,14 +23,18 @@ app/jobs/scheduler.py
 app/jobs/tasks.py
 app/schemas/__init__.py
 app/schemas/api.py
+app/schemas/food_log.py
 app/schemas/plan.py
 app/services/__init__.py
 app/services/catalog.py
 app/services/chat.py
 app/services/email.py
+app/services/emergency_plate.py
+app/services/food_log.py
 app/services/history.py
 app/services/inventory.py
 app/services/metrics.py
+app/services/nutrition_regeneration.py
 app/services/shopping.py
 app/services/planner/__init__.py
 app/services/planner/context.py
@@ -46,4 +50,6 @@ health_autopilot_backend.egg-info/requires.txt
 health_autopilot_backend.egg-info/top_level.txt
 tests/test_domain.py
 tests/test_email.py
+tests/test_food_log.py
 tests/test_lifecycle.py
+tests/test_nutrition_regeneration.py

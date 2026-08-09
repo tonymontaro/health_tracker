@@ -103,11 +103,11 @@ Seed operations are idempotent.
 ## Run the backend
 
 ```bash
-.venv/bin/uvicorn app.main:app --app-dir backend --reload
+.venv/bin/uvicorn app.main:app --app-dir backend --reload --port 8001
 ```
 
-The API is available at `http://localhost:8000`.
-Development API documentation is available at `http://localhost:8000/api/docs`.
+The API is available at `http://localhost:8001`.
+Development API documentation is available at `http://localhost:8001/api/docs`.
 
 ## Run the web application
 
@@ -116,6 +116,10 @@ npm run dev --workspace frontend
 ```
 
 Open `http://localhost:5173`.
+
+When using the local Cloudflare Tunnel, the web application is available at
+`https://health.anthonyngene.com` and its public API endpoint is
+`https://api-health.anthonyngene.com`.
 
 ## Build and install the Chrome extension
 
@@ -185,12 +189,10 @@ The scheduler normally logs one completed-job check every minute.
 
 ### Run the scheduler in the background
 
-Create a local runtime directory, start the scheduler with `nohup`, and save its process ID:
+Start the scheduler with `nohup` and save its process ID:
 
 ```bash
-mkdir -p .runtime
-nohup .venv/bin/health-autopilot scheduler > .runtime/scheduler.log 2>&1 &
-echo $! > .runtime/scheduler.pid
+make scheduler-start
 ```
 
 The `.runtime` directory is ignored by Git.
@@ -203,7 +205,7 @@ tail -f .runtime/scheduler.log
 Check the exact background process saved in the PID file with:
 
 ```bash
-ps -p "$(cat .runtime/scheduler.pid)" -o pid=,etime=,command=
+make scheduler-check
 ```
 
 `nohup` keeps the scheduler alive after the terminal closes, but it does not restart it after a computer reboot.
@@ -211,18 +213,13 @@ Use `launchd` on macOS or the hosting provider's process supervisor when automat
 
 ### Stop a background scheduler
 
-First inspect the saved process, then send it a graceful termination signal:
+Verify the saved process belongs to the scheduler and stop it gracefully:
 
 ```bash
-ps -p "$(cat .runtime/scheduler.pid)" -o pid=,etime=,command=
-kill -TERM "$(cat .runtime/scheduler.pid)"
+make scheduler-stop
 ```
 
-After confirming that `pgrep` returns no scheduler process, remove the stale PID file:
-
-```bash
-rm .runtime/scheduler.pid
-```
+The stop target removes the PID file after the process exits and safely cleans up a stale PID file.
 
 If the scheduler was started without a PID file, use `pgrep` to obtain its PID, verify the displayed command, and then run `kill -TERM <PID>`.
 Do not run multiple scheduler instances for the same database.

@@ -1,4 +1,6 @@
+from hashlib import sha256
 from html import escape
+from json import dumps
 from typing import Any, Protocol
 
 import resend
@@ -42,7 +44,11 @@ class ResendEmailService:
             "text": text_body,
             "html": html_body,
         }
-        options: resend.Emails.SendOptions = {"idempotency_key": idempotency_key}
+        payload = dumps(params, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        payload_hash = sha256(payload.encode()).hexdigest()[:16]
+        options: resend.Emails.SendOptions = {
+            "idempotency_key": f"{idempotency_key}/{payload_hash}"
+        }
         response = resend.Emails.send(params, options)
         message_id = response.get("id")
         if not message_id:

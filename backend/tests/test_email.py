@@ -25,11 +25,10 @@ PLAN = {
 
 
 def test_resend_service_sends_both_formats_with_idempotency(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: list[tuple[dict[str, object], dict[str, object] | None]] = []
 
     def fake_send(params, options=None):
-        captured["params"] = params
-        captured["options"] = options
+        captured.append((params, options))
         return {"id": "email_test_123"}
 
     monkeypatch.setattr(resend.Emails, "send", fake_send)
@@ -40,23 +39,41 @@ def test_resend_service_sends_both_formats_with_idempotency(monkeypatch) -> None
         RESEND_TO="delivered@resend.dev",
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
     )
-    message_id = ResendEmailService(settings).send(
+    service = ResendEmailService(settings)
+    message_id = service.send(
         "delivered@resend.dev",
         "Test subject",
         "Plain text",
         "<p>HTML</p>",
         idempotency_key="health-autopilot/morning-email/2030-01-01",
     )
+    service.send(
+        "delivered@resend.dev",
+        "Test subject",
+        "Plain text",
+        "<p>HTML</p>",
+        idempotency_key="health-autopilot/morning-email/2030-01-01",
+    )
+    service.send(
+        "delivered@resend.dev",
+        "Test subject",
+        "Changed plain text",
+        "<p>HTML</p>",
+        idempotency_key="health-autopilot/morning-email/2030-01-01",
+    )
 
     assert message_id == "email_test_123"
-    assert captured["params"] == {
+    assert captured[0][0] == {
         "from": "Health Autopilot <health@example.org>",
         "to": ["delivered@resend.dev"],
         "subject": "Test subject",
         "text": "Plain text",
         "html": "<p>HTML</p>",
     }
-    assert captured["options"] == {"idempotency_key": "health-autopilot/morning-email/2030-01-01"}
+    first_key = captured[0][1]["idempotency_key"]
+    assert first_key.startswith("health-autopilot/morning-email/2030-01-01/")
+    assert captured[1][1]["idempotency_key"] == first_key
+    assert captured[2][1]["idempotency_key"] != first_key
 
 
 def test_morning_email_includes_emergency_plate_in_both_formats() -> None:

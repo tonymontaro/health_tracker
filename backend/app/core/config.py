@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
     database_url: str = "postgresql+psycopg://health:health@localhost:55432/health"
     app_base_url: str = "http://localhost:5173"
-    api_base_url: str = "http://localhost:8000"
+    api_base_url: str = "http://localhost:8001"
     app_timezone: str = "Europe/Zurich"
     cors_allowed_origins: str = "http://localhost:5173"
 

@@ -14,5 +14,5 @@ cd backend
 ../.venv/bin/alembic upgrade head
 ../.venv/bin/health-autopilot seed
 
-echo "Setup complete. Start the API with: .venv/bin/uvicorn app.main:app --app-dir backend --reload"
+echo "Setup complete. Start the API with: .venv/bin/uvicorn app.main:app --app-dir backend --reload --port 8001"
 echo "Start the web app with: npm run dev --workspace frontend"
