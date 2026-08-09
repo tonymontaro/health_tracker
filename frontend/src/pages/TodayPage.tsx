@@ -495,7 +495,6 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
         <NavLink to="/today/food">Food & nutrition</NavLink>
         <NavLink to="/today/exercise">Exercise</NavLink>
       </nav>
-      <section className="status-hero"><div><p className="eyebrow">Current status</p><h2>{data.current_status}</h2><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></div><div className="hero-orb" /></section>
       <div className="today-grid">
         <div className="main-column">
           {isFood ? <>
@@ -511,6 +510,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
           </>}
         </div>
         <aside className="side-column">
+          <section className="card compact"><p className="eyebrow">Current status</p><h3>{data.current_status}</h3><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></section>
           {isFood ? <>
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small></div>)}</section>

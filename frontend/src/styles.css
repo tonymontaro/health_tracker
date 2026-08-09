@@ -48,12 +48,6 @@ textarea { min-height: 78px; resize: vertical; }
 
 .card { background: rgba(250, 249, 244, 0.94); border: 1px solid rgba(198, 205, 197, 0.8); border-radius: 20px; padding: 1.45rem; box-shadow: 0 4px 16px rgba(24, 51, 45, 0.035); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.status-hero { position: relative; overflow: hidden; min-height: 210px; display: flex; align-items: center; padding: 2.5rem; margin-bottom: 1.25rem; border-radius: 25px; color: white; background: linear-gradient(125deg, #17372e, #2d6a56); box-shadow: var(--shadow); }
-.status-hero > div:first-child { max-width: 750px; position: relative; z-index: 1; }
-.status-hero .eyebrow { color: #b7d4c7; }
-.status-hero h2 { font-size: clamp(1.7rem, 3vw, 2.6rem); line-height: 1.2; }
-.status-hero p:last-child { color: #d5e6de; margin-bottom: 0; text-transform: capitalize; }
-.hero-orb { position: absolute; width: 260px; height: 260px; right: -60px; top: -40px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(238, 183, 115, 0.9), rgba(218, 116, 76, 0.25) 45%, transparent 70%); }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(260px, 0.75fr); gap: 1.25rem; align-items: start; }
 .main-column, .side-column { display: grid; gap: 1.25rem; }
 .meta, .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
@@ -190,7 +184,6 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.4rem 0; }
   .today-grid, .history-layout, .shopping-grid, .settings-grid { grid-template-columns: 1fr; }
   .history-list { display: flex; position: static; max-height: none; overflow-x: auto; }
   .history-list button { min-width: 170px; }
-  .status-hero { padding: 1.6rem; }
   .shopping-summary { grid-template-columns: 1fr; gap: 1rem; }
   .shopping-summary > div { padding: 0; border: 0; }
 }
