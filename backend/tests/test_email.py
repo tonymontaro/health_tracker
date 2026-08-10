@@ -85,6 +85,33 @@ def test_morning_email_includes_emergency_plate_in_both_formats() -> None:
     assert "500 g Skyr / quark" in html
 
 
+def test_morning_email_contains_every_exercise_and_actionable_meal_details(
+    db: Session, settings: Settings, seeded
+) -> None:
+    target = date(2026, 8, 8)
+    plan = generate_daily_plan(db, settings, target, use_ai=False)
+    document = plan.current_plan_json
+    exercise_names = [item["exercise_name"] for item in document["workout"]["exercises"]]
+
+    assert len(exercise_names) == 3
+
+    _, text, html = morning_email(document, "https://health.example.org")
+
+    for name in exercise_names:
+        assert name in text
+        assert name in html
+    assert document["workout"]["exercises"][0]["instructions"] in text
+    assert document["workout"]["exercises"][0]["instructions"] in html
+    assert "250 g Chicken breast" in text
+    assert "200 g cooked Brown rice" in text
+    assert "Ingredients:" in text
+    assert "Preparation:" in text
+    assert "250 g Chicken breast" in html
+    assert "200 g cooked Brown rice" in html
+    assert "<strong>Ingredients</strong>" in html
+    assert "<strong>Preparation:</strong>" in html
+
+
 def test_evening_email_includes_emergency_plate_in_both_formats() -> None:
     _, text, html = evening_email(PLAN, "https://health.example.org")
 

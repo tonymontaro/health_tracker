@@ -15,6 +15,8 @@ Return a schema-valid planning proposal and concise application-facing rationale
 Use only supplied meal templates and exercise catalog entries.
 Use only exercises marked available_today and respect the supplied equipment state.
 The user eats one or two main meals. Fruit and optional snacks are separate.
+For every selected meal template, copy every ingredient and its quantity from active_meal_templates
+into the meal ingredients. Keep preparation concise and actionable. Never return only a meal name.
 Never prescribe more than three exercises.
 Gym-only work is allowed only on Saturday or Sunday.
 Thursday is rest or at most very light recovery movement.

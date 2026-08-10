@@ -273,7 +273,7 @@ def _proposal_from_template(template: MealTemplate, suggested_window: str) -> Me
         estimated_protein_g=template.estimated_protein_g,
         estimated_fiber_g=template.estimated_fiber_g,
         hands_on_minutes=template.hands_on_minutes,
-        ingredients=[item["name"] for item in template.ingredients_json],
+        ingredients=[f"{item['quantity']} {item['name']}" for item in template.ingredients_json],
         preparation=(
             f"Batch prepare {template.batch_size} servings; {template.hands_on_minutes} active minutes."
             if template.batch_size > 1
