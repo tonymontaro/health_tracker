@@ -34,6 +34,8 @@ def test_readable_prompt_log_has_human_friendly_sections() -> None:
     assert '  "errors": [' in output
     assert 'A true rest plan must use kind "rest"' in output
     assert 'Light recovery\nmovement must instead use kind "recovery"' in output
+    assert "self-contained, simple recipe with\nconcise numbered steps" in output
+    assert "Use as many steps as the recipe needs" in output
 
 
 def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors() -> None:

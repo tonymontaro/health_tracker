@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Equipment, WorkoutEntry
+from app.db.models import Equipment, MealTemplate, WorkoutEntry
 from app.schemas.plan import (
     DailyPlanProposal,
     ExerciseProposal,
@@ -15,6 +15,7 @@ from app.schemas.plan import (
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
+from app.services.planner.meal_recipes import simple_meal_recipe
 
 MONDAY = date(2026, 8, 10)
 THURSDAY = date(2026, 8, 13)
@@ -37,6 +38,23 @@ def test_fruit_and_snacks_do_not_count_as_main_meals(db: Session, seeded) -> Non
     seeded.max_main_meals_per_day = 1
     one_meal_plan = build_fallback_plan(db, MONDAY)
     assert one_meal_plan.nutrition.expected_main_meals == 1
+
+
+def test_every_catalog_meal_has_a_simple_numbered_recipe(db: Session, seeded) -> None:
+    templates = list(db.scalars(select(MealTemplate).where(MealTemplate.active.is_(True))))
+
+    assert templates
+    for template in templates:
+        recipe = simple_meal_recipe(template)
+        assert recipe.startswith("1. ")
+        assert "2. " in recipe
+
+    plan = build_fallback_plan(db, MONDAY)
+    selected_template = db.scalar(
+        select(MealTemplate).where(MealTemplate.name == plan.nutrition.meal_1.template_name)
+    )
+    assert selected_template
+    assert plan.nutrition.meal_1.preparation == simple_meal_recipe(selected_template)
 
 
 def test_more_than_three_exercises_is_schema_invalid(db: Session, seeded) -> None:

@@ -88,6 +88,18 @@ button:disabled { cursor: not-allowed; opacity: 0.52; }
 .success.standalone { margin: 1rem 0 0; }
 .food-log-submit { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .food-log-submit small { max-width: 62%; }
+.recipe-guide { margin-top: 1rem; padding: 0.8rem 0.9rem; border: 1px solid #d9ddd5; border-radius: 12px; background: rgba(242,244,238,0.72); }
+.recipe-guide summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0; color: var(--forest); list-style: none; }
+.recipe-guide summary::-webkit-details-marker { display: none; }
+.recipe-guide[open] summary { margin-bottom: 0.9rem; }
+.recipe-toggle { color: #61776f; font-size: 0.75rem; font-weight: 700; }
+.recipe-collapse { display: none; }
+.recipe-guide[open] .recipe-expand { display: none; }
+.recipe-guide[open] .recipe-collapse { display: inline; }
+.recipe-content { padding-top: 0.1rem; border-top: 1px solid #dde2da; }
+.recipe-content h3 { margin: 0.8rem 0 0.4rem; font-family: "DM Sans", sans-serif; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.recipe-content ul { display: grid; gap: 0.3rem; margin: 0; padding-left: 1.2rem; color: #49635b; font-size: 0.84rem; }
+.recipe-steps { display: grid; gap: 0.45rem; margin: 0; padding-left: 1.25rem; color: #35574d; font-size: 0.88rem; line-height: 1.5; }
 .meal-regeneration-card, .workout-regeneration-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1rem 1.25rem; }
 .meal-regeneration-card > div, .workout-regeneration-card > div { display: grid; gap: 0.25rem; }
 .meal-regeneration-card .eyebrow, .workout-regeneration-card .eyebrow { margin: 0; }

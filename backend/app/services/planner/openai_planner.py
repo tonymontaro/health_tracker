@@ -16,7 +16,11 @@ Use only supplied meal templates and exercise catalog entries.
 Use only exercises marked available_today and respect the supplied equipment state.
 The user eats one or two main meals. Fruit and optional snacks are separate.
 For every selected meal template, copy every ingredient and its quantity from active_meal_templates
-into the meal ingredients. Keep preparation concise and actionable. Never return only a meal name.
+into the meal ingredients. The preparation field must be a self-contained, simple recipe with
+concise numbered steps. Use every listed ingredient, include cooking times and temperatures when
+relevant, and explain how to portion batch recipes. Use as many steps as the recipe needs without
+adding unnecessary detail. Do not require unlisted ingredients except optional water or basic
+seasoning. Never return only a meal name or generic preparation advice.
 Never prescribe more than three exercises.
 Gym-only work is allowed only on Saturday or Sunday.
 Thursday is rest or at most very light recovery movement.

@@ -40,10 +40,19 @@ function exerciseText(exercise: Exercise): string {
   return `${load ?? 0} kg · ${exercise.reps_per_set?.join(" / ")} reps · ${exercise.rest_seconds}s rest`;
 }
 
+function preparationSteps(preparation: string): string[] {
+  const numberedSteps = preparation
+    .split(/\s+(?=\d+\.\s)/)
+    .map((step) => step.replace(/^\d+\.\s*/, "").trim())
+    .filter(Boolean);
+  return numberedSteps.length > 1 ? numberedSteps : [preparation.trim()].filter(Boolean);
+}
+
 function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Today }) {
   const queryClient = useQueryClient();
   const status = today.nutrition_status[meal.recommendation_id]?.status ?? "planned";
   const foodLogLocked = today.food_log !== null;
+  const recipeSteps = preparationSteps(meal.preparation);
   const action = useMutation({
     mutationFn: (kind: "confirm" | "skip") =>
       api(datedPath(`/today/nutrition/${meal.recommendation_id}/${kind}`, today.date), { method: "POST" }),
@@ -55,6 +64,14 @@ function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Toda
       <h2>{meal.template_name}</h2>
       <p>{meal.description}</p>
       <div className="meta"><span>{meal.estimated_protein_g} g protein</span><span>{meal.hands_on_minutes} active min</span><span>{meal.suggested_window}</span></div>
+      <details className="recipe-guide">
+        <summary><span>Recipe prep guide</span><span className="recipe-toggle"><span className="recipe-expand">Expand</span><span className="recipe-collapse">Collapse</span></span></summary>
+        <div className="recipe-content">
+          {meal.ingredients.length > 0 && <><h3>Ingredients</h3><ul>{meal.ingredients.map((ingredient, index) => <li key={`${ingredient}-${index}`}>{ingredient}</li>)}</ul></>}
+          <h3>Method</h3>
+          <ol className="recipe-steps">{recipeSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol>
+        </div>
+      </details>
       <div className="actions">
         <button className="primary small" disabled={foodLogLocked || action.isPending || status === "confirmed"} onClick={() => action.mutate("confirm")}>Done</button>
         <button className="quiet small" disabled={foodLogLocked || action.isPending} onClick={() => action.mutate("skip")}>Skip</button>

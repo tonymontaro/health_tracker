@@ -22,7 +22,12 @@ class MealProposal(BaseModel):
     estimated_fiber_g: float = Field(ge=0, le=100)
     hands_on_minutes: int = Field(ge=0, le=120)
     ingredients: list[str]
-    preparation: str
+    preparation: str = Field(
+        description=(
+            "A self-contained, concise recipe with numbered preparation steps, including cooking "
+            "times and temperatures when relevant."
+        )
+    )
 
 
 class MealRecommendation(MealProposal):

@@ -26,6 +26,7 @@ from app.schemas.plan import (
 from app.services.planner.context import build_planner_context
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
+from app.services.planner.meal_recipes import simple_meal_recipe
 from app.services.planner.openai_planner import (
     PLANNER_VERSION,
     OpenAIPlanner,
@@ -274,11 +275,7 @@ def _proposal_from_template(template: MealTemplate, suggested_window: str) -> Me
         estimated_fiber_g=template.estimated_fiber_g,
         hands_on_minutes=template.hands_on_minutes,
         ingredients=[f"{item['quantity']} {item['name']}" for item in template.ingredients_json],
-        preparation=(
-            f"Batch prepare {template.batch_size} servings; {template.hands_on_minutes} active minutes."
-            if template.batch_size > 1
-            else f"Prepare in about {template.hands_on_minutes} active minutes."
-        ),
+        preparation=simple_meal_recipe(template),
     )
 
 
