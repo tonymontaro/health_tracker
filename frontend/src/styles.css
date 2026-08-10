@@ -166,6 +166,9 @@ details summary { cursor: pointer; font-weight: 700; margin-bottom: 1rem; }
 .shopping-summary span { color: #b9cec6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .shopping-summary strong { font-size: 1.2rem; }
 .shopping-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start; }
+.shopping-list-heading { align-items: flex-start; }
+.shopping-list-heading .eyebrow { margin-bottom: 0; }
+.copy-feedback { margin: 0.5rem 0 0.25rem; font-size: 0.8rem; }
 .shopping-item > span { color: #637970; font-size: 0.75rem; text-align: right; }
 .confidence { border-radius: 999px; padding: 0.25rem 0.5rem; background: #e6ebe6; }
 .confidence-high { color: #176342 !important; background: #d8eddf; }
