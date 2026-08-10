@@ -9,6 +9,7 @@ export type EntryStatus = {
   actual?: Record<string, unknown> | null;
   difficulty_1_to_10?: number | null;
   pain_flag?: boolean;
+  notes?: string | null;
   quantity?: Record<string, unknown>;
   food_log_id?: string | null;
   workout_log_id?: string | null;

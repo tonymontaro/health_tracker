@@ -52,7 +52,7 @@ function stravaActivityId(entry: EntryStatus): number | null {
 
 function sourceLabel(entry: EntryStatus): string {
   if (entry.source === "strava" || stravaActivityId(entry)) return "Imported from Strava";
-  if (entry.source === "workout_log") return "Recorded from workout diary";
+  if (entry.source === "workout_log" || entry.source === "ai_workout_log") return "Recorded from workout diary";
   if (entry.source === "history_correction") return "Manually corrected";
   if (entry.source === "manual") return "Recorded manually";
   return entry.source.replaceAll("_", " ");
@@ -102,7 +102,8 @@ function ExerciseHistory({
         {day.workouts.length === 0 && <p>No exercise was recorded for this day.</p>}
         {day.workouts.map((entry) => {
           const activityId = stravaActivityId(entry);
-          return <div className="history-entry" key={entry.id}><div><div className="history-entry-title"><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} /></div><span className={`provenance ${activityId ? "provenance-strava" : ""}`}>{sourceLabel(entry)}</span>{workoutActualText(entry.actual) && <small>{workoutActualText(entry.actual)}</small>}{activityId && <a className="strava-link" href={`https://www.strava.com/activities/${activityId}`} target="_blank" rel="noreferrer">View activity on Strava</a>}</div><div className="actions"><button className="quiet small" onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div></div>;
+          const hasEvaluation = entry.difficulty_1_to_10 != null || entry.pain_flag;
+          return <div className="history-entry" key={entry.id}><div><div className="history-entry-title"><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} /></div><span className={`provenance ${activityId ? "provenance-strava" : ""}`}>{sourceLabel(entry)}</span>{workoutActualText(entry.actual) && <small>{workoutActualText(entry.actual)}</small>}{hasEvaluation && <div className="meta recorded-evaluation">{entry.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {entry.difficulty_1_to_10}/10</span>}{entry.pain_flag && <span>Pain recorded</span>}</div>}{entry.notes && <p className="recorded-notes"><strong>Notes:</strong> {entry.notes}</p>}{activityId && <a className="strava-link" href={`https://www.strava.com/activities/${activityId}`} target="_blank" rel="noreferrer">View activity on Strava</a>}</div><div className="actions"><button className="quiet small" onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div></div>;
         })}
       </section>
     </>

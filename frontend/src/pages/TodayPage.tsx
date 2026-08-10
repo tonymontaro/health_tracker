@@ -462,11 +462,14 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
         const status = today.workout_status[exercise.recommendation_id]?.status ?? "planned";
         const recorded = today.workout_status[exercise.recommendation_id];
         const strength = exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight";
+        const hasEvaluation = recorded && (recorded.difficulty_1_to_10 != null || recorded.pain_flag);
         return (
           <div className="exercise" key={exercise.recommendation_id}>
             <div><strong>{exercise.exercise_name}</strong> <StatusPill status={status} /></div>
             <p className="prescription">{exerciseText(exercise)}</p><p>{exercise.instructions}</p>
             {recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
+            {hasEvaluation && <div className="meta recorded-evaluation">{recorded.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {recorded.difficulty_1_to_10}/10</span>}{recorded.pain_flag && <span>Pain recorded</span>}</div>}
+            {recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
             <div className="actual-grid">
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
               <label>{strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
