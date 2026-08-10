@@ -161,6 +161,13 @@ class QuestionResponse(QAResponse):
     message_id: UUID
 
 
+class ChatMessageResponse(QuestionResponse):
+    message_date: date
+    question: str
+    created_at: datetime
+    applied_at: datetime | None
+
+
 class ApiTokenResponse(BaseModel):
     id: UUID
     name: str

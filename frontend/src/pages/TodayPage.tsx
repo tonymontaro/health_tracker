@@ -473,41 +473,97 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
   );
 }
 
-function ChatPanel({ initialQuestion }: { initialQuestion: string }) {
+type PlanChatMessage = {
+  message_id: string;
+  message_date: string;
+  question: string;
+  answer: string;
+  proposed_change: Record<string, unknown> | null;
+  applied_at: string | null;
+  created_at: string;
+};
+
+function ChatPanel({
+  initialQuestion,
+  canAsk,
+  selectedDate,
+}: {
+  initialQuestion: string;
+  canAsk: boolean;
+  selectedDate: string;
+}) {
   const queryClient = useQueryClient();
   const [question, setQuestion] = useState(initialQuestion);
+  const [previousOpen, setPreviousOpen] = useState(false);
+  const messages = useQuery({
+    queryKey: ["chat-messages", selectedDate],
+    queryFn: () => api<PlanChatMessage[]>(datedPath("/today/questions", selectedDate)),
+  });
+  const previousMessages = useQuery({
+    queryKey: ["chat-messages", "before", selectedDate],
+    queryFn: () => api<PlanChatMessage[]>(`/today/questions?before=${encodeURIComponent(selectedDate)}`),
+    enabled: previousOpen,
+  });
   const ask = useMutation({
-    mutationFn: () => api<{ message_id: string; answer: string; proposed_change: Record<string, unknown> | null }>("/today/questions", { method: "POST", body: JSON.stringify({ question }) }),
+    mutationFn: () => api("/today/questions", { method: "POST", body: JSON.stringify({ question }) }),
+    onSuccess: async () => {
+      setQuestion("");
+      await queryClient.invalidateQueries({ queryKey: ["chat-messages"] });
+    },
   });
   const apply = useMutation({
     mutationFn: (messageId: string) => api(`/today/recommendations/${messageId}/apply-change`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["chat-messages"] }),
+      ]);
+    },
   });
   function submit(event: FormEvent) { event.preventDefault(); if (question.trim()) ask.mutate(); }
+  function renderMessage(message: PlanChatMessage) {
+    const canApply = canAsk && message.message_date === selectedDate && !message.applied_at;
+    return <article className="chat-exchange" key={message.message_id}>
+      <div className="chat-exchange-meta"><strong>{new Date(`${message.message_date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</strong><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</time></div>
+      <div className="chat-message chat-question"><small>You</small><p>{message.question}</p></div>
+      <div className="chat-message chat-response"><small>AI</small><p>{message.answer}</p></div>
+      {message.proposed_change && <div className="chat-proposal"><small>Proposed plan change</small><pre>{JSON.stringify(message.proposed_change, null, 2)}</pre>{message.applied_at ? <span className="status status-completed">Applied</span> : canApply ? <button className="primary small" disabled={apply.isPending} onClick={() => apply.mutate(message.message_id)}>Apply this change</button> : <small>This change is from an earlier plan and is kept for reference.</small>}</div>}
+    </article>;
+  }
   return (
     <section className="card chat-card">
-      <p className="eyebrow">Ask about today's plan</p>
-      <form onSubmit={submit}><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Why this pace? Can I use the KICKR instead?" /><button className="primary small" disabled={ask.isPending}>Ask AI</button></form>
-      {ask.data && <div className="ai-answer"><p>{ask.data.answer}</p>{ask.data.proposed_change && <><pre>{JSON.stringify(ask.data.proposed_change, null, 2)}</pre><button className="primary small" onClick={() => apply.mutate(ask.data.message_id)}>Apply this change</button></>}</div>}
+      {canAsk && <><p className="eyebrow">Ask about today's plan</p><form onSubmit={submit}><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Why this pace? Can I use the KICKR instead?" /><button className="primary small" disabled={ask.isPending || !question.trim()}>{ask.isPending ? "Asking..." : "Ask AI"}</button></form></>}
+      <div className="chat-feed-heading"><div><p className="eyebrow">Chats</p><h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2></div><small>Newest first</small></div>
+      {messages.isLoading && <p>Loading saved chats...</p>}
+      {messages.error && <p className="error">{messages.error.message}</p>}
+      {messages.data?.length === 0 && <p>No saved conversations for this day.</p>}
+      <div className="chat-feed">
+        {messages.data?.map(renderMessage)}
+      </div>
+      <details className="previous-chats" onToggle={(event) => setPreviousOpen(event.currentTarget.open)}>
+        <summary>Previous chats</summary>
+        {previousOpen && previousMessages.isLoading && <p>Loading previous chats...</p>}
+        {previousMessages.error && <p className="error">{previousMessages.error.message}</p>}
+        {previousMessages.data?.length === 0 && <p>No earlier conversations.</p>}
+        <div className="chat-feed">{previousMessages.data?.map(renderMessage)}</div>
+      </details>
       {(ask.error || apply.error) && <p className="error">{ask.error?.message ?? apply.error?.message}</p>}
     </section>
   );
 }
 
 export function TodayPage({ section }: { section: "food" | "exercise" }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedDate = searchParams.get("date");
   const todayPath = requestedDate ? datedPath("/today", requestedDate) : "/today";
-  const detailsPath = requestedDate ? datedPath("/today/details", requestedDate) : "/today/details";
   const today = useQuery({ queryKey: ["today", requestedDate ?? "current"], queryFn: () => api<Today>(todayPath) });
-  const details = useQuery({ queryKey: ["today-details", requestedDate ?? "current"], queryFn: () => api<{ plan: Record<string, unknown>; original_plan: Record<string, unknown> }>(detailsPath), enabled: detailsOpen });
   if (today.isLoading) return <div className="loading">Building the selected day's plan...</div>;
   if (today.error || !today.data) return <div className="error-panel"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
   const isFood = section === "food";
-  const isHistorical = data.date !== data.recording_dates[0];
+  const currentDate = data.recording_dates[0] ?? data.date;
+  const isHistorical = data.date !== currentDate;
   const tabSearch = isHistorical ? `?date=${encodeURIComponent(data.date)}` : "";
   return (
     <>
@@ -541,8 +597,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
           {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
         </aside>
       </div>
-      {!isHistorical && <ChatPanel key={alternativeQuestion} initialQuestion={alternativeQuestion} />}
-      <section className="details-section"><button className="text-button" onClick={() => setDetailsOpen(!detailsOpen)}>{detailsOpen ? "Hide advanced details" : "Why these recommendations? View advanced details"}</button>{detailsOpen && details.data && <div className="card details-card"><pre>{JSON.stringify(details.data.plan, null, 2)}</pre></div>}</section>
+      <ChatPanel key={`${data.date}-${alternativeQuestion}`} initialQuestion={alternativeQuestion} canAsk={!isHistorical} selectedDate={data.date} />
     </>
   );
 }

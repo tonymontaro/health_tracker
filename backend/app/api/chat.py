@@ -1,20 +1,58 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import AuthContext, require_write_auth
+from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
 from app.db.models import ChatMessage, DailyPlan
 from app.db.session import get_db
-from app.schemas.api import QuestionRequest, QuestionResponse
+from app.schemas.api import ChatMessageResponse, QuestionRequest, QuestionResponse
 from app.services.chat import ask_about_plan
 from app.services.history import replace_recommendation
+from app.services.recording_dates import current_recording_date
 
 router = APIRouter(prefix="/today", tags=["chat"])
+
+
+def _chat_response(message: ChatMessage) -> ChatMessageResponse:
+    return ChatMessageResponse(
+        message_id=message.id,
+        message_date=message.message_date,
+        question=message.question,
+        answer=message.answer,
+        proposed_change=message.proposal_json,
+        caution=None,
+        created_at=message.created_at,
+        applied_at=message.applied_at,
+    )
+
+
+@router.get("/questions", response_model=list[ChatMessageResponse])
+def list_questions(
+    target_date: date | None = Query(default=None, alias="date"),
+    before: date | None = Query(default=None),
+    _: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[ChatMessageResponse]:
+    if target_date is not None and before is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Choose either a specific chat date or a previous-chat boundary.",
+        )
+    query = select(ChatMessage)
+    if before is not None:
+        query = query.where(ChatMessage.message_date < before)
+    else:
+        query = query.where(
+            ChatMessage.message_date == (target_date or current_recording_date(settings))
+        )
+    messages = db.scalars(query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()))
+    return [_chat_response(message) for message in messages]
 
 
 @router.post("/questions", response_model=QuestionResponse)
