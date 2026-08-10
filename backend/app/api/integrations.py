@@ -1,9 +1,8 @@
 import logging
-from datetime import datetime
+from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -15,6 +14,7 @@ from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
 from app.db.models import StravaConnection
 from app.db.session import SessionLocal, get_db
+from app.services.recording_dates import resolve_recording_date
 from app.services.strava import (
     StravaIntegrationError,
     complete_authorization,
@@ -125,9 +125,32 @@ def sync_strava_today(
     connection = _connection(db, auth.account.id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
-    target_date = datetime.now(ZoneInfo(settings.app_timezone)).date()
+    target_date = resolve_recording_date(settings, None)
     try:
         return sync_connection_for_date(db, settings, connection, target_date)
+    except StravaIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/sync-day")
+def sync_strava_day(
+    target_date: date = Query(alias="date"),
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, int]:
+    connection = _connection(db, auth.account.id)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Strava is not connected")
+    try:
+        validated_date = resolve_recording_date(settings, target_date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    try:
+        return sync_connection_for_date(db, settings, connection, validated_date)
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

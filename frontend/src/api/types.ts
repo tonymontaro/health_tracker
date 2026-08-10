@@ -144,6 +144,7 @@ export type Exercise = {
 
 export type Today = {
   date: string;
+  recording_dates: string[];
   source: "openai" | "fallback";
   current_status: string;
   recovery_status: string;

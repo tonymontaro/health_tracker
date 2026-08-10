@@ -1,8 +1,7 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -44,6 +43,11 @@ from app.services.nutrition_regeneration import (
     regenerate_nutrition,
 )
 from app.services.planner.orchestrator import generate_daily_plan
+from app.services.recording_dates import (
+    available_recording_dates,
+    current_recording_date,
+    resolve_recording_date,
+)
 from app.services.strava import (
     StravaIntegrationError,
     sync_connection_for_date,
@@ -63,11 +67,21 @@ router = APIRouter(prefix="/today", tags=["today"])
 
 
 def local_today(settings: Settings) -> date:
-    return datetime.now(ZoneInfo(settings.app_timezone)).date()
+    return current_recording_date(settings)
 
 
-def _plan(db: Session, settings: Settings) -> DailyPlan:
-    return generate_daily_plan(db, settings, local_today(settings))
+def _recording_date(settings: Settings, requested: date | None) -> date:
+    try:
+        return resolve_recording_date(settings, requested)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+
+def _plan(db: Session, settings: Settings, target: date | None = None) -> DailyPlan:
+    return generate_daily_plan(db, settings, _recording_date(settings, target))
 
 
 def _status_maps(db: Session, target: date) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -124,7 +138,7 @@ def _reject_if_food_log_exists(db: Session, target: date) -> None:
     if _food_log(db, target):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Today's food text is authoritative. Re-analyze it or correct the entry in History.",
+            detail="This day's food text is authoritative. Re-analyze it or correct the entry in History.",
         )
 
 
@@ -133,7 +147,7 @@ def _reject_if_workout_log_exists(db: Session, target: date) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Today's workout text is authoritative. Re-analyze it or correct the entry "
+                "This day's workout text is authoritative. Re-analyze it or correct the entry "
                 "in History."
             ),
         )
@@ -141,15 +155,17 @@ def _reject_if_workout_log_exists(db: Session, target: date) -> None:
 
 @router.get("")
 def get_today(
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    plan = _plan(db, settings)
+    plan = _plan(db, settings, target_date)
     document = plan.current_plan_json
     nutrition_status, workout_status = _status_maps(db, plan.plan_date)
     return {
         "date": plan.plan_date.isoformat(),
+        "recording_dates": [item.isoformat() for item in available_recording_dates(settings)],
         "source": document["source"],
         "current_status": document["profile_snapshot"]["short_summary"],
         "recovery_status": document["profile_snapshot"]["recovery_status"],
@@ -169,11 +185,12 @@ def get_today(
 
 @router.get("/details")
 def get_today_details(
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    plan = _plan(db, settings)
+    plan = _plan(db, settings, target_date)
     nutrition_status, workout_status = _status_maps(db, plan.plan_date)
     return {
         "plan": plan.current_plan_json,
@@ -204,11 +221,12 @@ def _nutrition_entry(db: Session, recommendation_id: str, target: date) -> Nutri
 @router.post("/nutrition/{recommendation_id}/confirm")
 def confirm_nutrition(
     recommendation_id: str,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = local_today(settings)
+    target = _recording_date(settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
     if entry.status not in {"confirmed", "assumed_consumed"}:
@@ -224,11 +242,12 @@ def confirm_nutrition(
 @router.post("/nutrition/{recommendation_id}/skip")
 def skip_nutrition(
     recommendation_id: str,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = local_today(settings)
+    target = _recording_date(settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
     if entry.status in {"confirmed", "assumed_consumed"}:
@@ -245,11 +264,12 @@ def skip_nutrition(
 def replace_nutrition(
     recommendation_id: str,
     payload: ReplaceRecommendationRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    plan = _plan(db, settings)
+    plan = _plan(db, settings, target_date)
     _reject_if_food_log_exists(db, plan.plan_date)
     try:
         replace_recommendation(
@@ -263,13 +283,15 @@ def replace_nutrition(
 @router.post("/nutrition/manual", status_code=201)
 def manual_nutrition(
     payload: ManualNutritionRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    _reject_if_food_log_exists(db, local_today(settings))
+    target = _recording_date(settings, target_date)
+    _reject_if_food_log_exists(db, target)
     entry = NutritionEntry(
-        entry_date=local_today(settings),
+        entry_date=target,
         meal_slot=payload.meal_slot,
         description=payload.description,
         quantity_json=payload.quantity,
@@ -304,12 +326,13 @@ def regenerate_today_nutrition(
 @router.post("/nutrition/food-log", response_model=FoodLogResponse)
 def record_food_log(
     payload: FoodLogRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> FoodLogResponse:
-    target = local_today(settings)
-    _plan(db, settings)
+    target = _recording_date(settings, target_date)
+    _plan(db, settings, target)
     try:
         return process_daily_food_log(db, settings, target, payload.text)
     except RuntimeError as exc:
@@ -329,13 +352,14 @@ def record_food_log(
 @router.post("/workout/complete")
 def complete_workout(
     payload: WorkoutCompletionRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
     if not payload.results:
         raise HTTPException(status_code=422, detail="Actual performance evidence is required")
-    target = local_today(settings)
+    target = _recording_date(settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target)))
     changed: list[WorkoutEntry] = []
@@ -362,11 +386,12 @@ def complete_workout(
 
 @router.post("/workout/skip")
 def skip_workout(
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
-    target = local_today(settings)
+    target = _recording_date(settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entries = list(
         db.scalars(
@@ -423,12 +448,13 @@ def regenerate_today_workout(
 @router.post("/workout/log/analyze", response_model=WorkoutLogAnalysisResponse)
 def analyze_workout_log(
     payload: WorkoutLogRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> WorkoutLogAnalysisResponse:
-    target = local_today(settings)
-    _plan(db, settings)
+    target = _recording_date(settings, target_date)
+    _plan(db, settings, target)
     try:
         return analyze_daily_workout_log(db, settings, target, payload.text)
     except RuntimeError as exc:
@@ -448,12 +474,13 @@ def analyze_workout_log(
 @router.post("/workout/log", response_model=WorkoutLogResponse)
 def record_workout_log(
     payload: WorkoutLogSubmissionRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> WorkoutLogResponse:
-    target = local_today(settings)
-    _plan(db, settings)
+    target = _recording_date(settings, target_date)
+    _plan(db, settings, target)
     try:
         return process_daily_workout_log(
             db,
@@ -473,11 +500,12 @@ def record_workout_log(
 def replace_workout(
     recommendation_id: str,
     payload: ReplaceRecommendationRequest,
+    target_date: date | None = Query(default=None, alias="date"),
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    plan = _plan(db, settings)
+    plan = _plan(db, settings, target_date)
     try:
         replace_recommendation(
             db, plan, recommendation_id, payload.replacement, payload.reason, "user"

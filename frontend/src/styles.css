@@ -41,6 +41,10 @@ textarea { min-height: 78px; resize: vertical; }
 .topbar nav a.active { color: var(--forest); background: #e3ebe4; }
 .page { max-width: 1180px; margin: 0 auto; padding: 2.5rem 2rem 5rem; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2.4rem; }
+.page-header-actions { display: flex; align-items: flex-end; gap: 0.75rem; }
+.date-selector { display: grid; gap: 0.3rem; min-width: 190px; }
+.date-selector span { color: #60766e; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.date-selector select { padding: 0.55rem 2.1rem 0.55rem 0.7rem; border-radius: 10px; background-color: rgba(250, 249, 244, 0.94); }
 .eyebrow { margin-bottom: 0.5rem; color: #6c7f76; font-size: 0.71rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; font-family: "DM Sans", sans-serif; }
 .page-tabs { display: flex; width: fit-content; gap: 0.35rem; margin: -1rem 0 1.25rem; padding: 0.3rem; border: 1px solid #d4dad3; border-radius: 13px; background: rgba(250, 249, 244, 0.72); }
 .page-tabs a { padding: 0.62rem 0.9rem; border-radius: 9px; color: #60766e; font-size: 0.84rem; font-weight: 700; }
@@ -189,6 +193,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.4rem 0; }
 }
 
 @media (max-width: 520px) {
+  .page-header { align-items: stretch; flex-direction: column; }
+  .page-header-actions { align-items: stretch; flex-direction: column; }
+  .page-header-actions .source { align-self: flex-start; }
   .actual-grid, .form-grid, .completion-row, .workout-editor-grid { grid-template-columns: 1fr; }
   .chat-card form { grid-template-columns: 1fr; }
   .card { padding: 1.1rem; border-radius: 16px; }

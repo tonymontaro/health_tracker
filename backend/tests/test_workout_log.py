@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -320,7 +320,8 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
-    target = local_today(api_settings)
+    current = local_today(api_settings)
+    target = current - timedelta(days=1)
     generate_daily_plan(db, api_settings, target, use_ai=False)
     recommendation = db.scalar(
         select(WorkoutEntry).where(
@@ -353,15 +354,16 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
             unauthenticated_response = await client.post(
-                "/api/v1/today/workout/log/analyze", json={"text": "Bench press."}
+                f"/api/v1/today/workout/log/analyze?date={target.isoformat()}",
+                json={"text": "Bench press."},
             )
             analysis_response = await client.post(
-                "/api/v1/today/workout/log/analyze",
+                f"/api/v1/today/workout/log/analyze?date={target.isoformat()}",
                 headers={"Authorization": f"Bearer {raw_token}"},
                 json={"text": "Bench press."},
             )
             authenticated_response = await client.post(
-                "/api/v1/today/workout/log",
+                f"/api/v1/today/workout/log?date={target.isoformat()}",
                 headers={"Authorization": f"Bearer {raw_token}"},
                 json={
                     "text": "Bench press.",
@@ -369,7 +371,8 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
                 },
             )
             today_response = await client.get(
-                "/api/v1/today", headers={"Authorization": f"Bearer {raw_token}"}
+                f"/api/v1/today?date={target.isoformat()}",
+                headers={"Authorization": f"Bearer {raw_token}"},
             )
         return (
             unauthenticated_response,
@@ -390,4 +393,6 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
         recommendation.planned_recommendation_id
     ]
     assert today_response.status_code == 200
+    assert today_response.json()["date"] == target.isoformat()
     assert today_response.json()["workout_log"]["status"] == "processed"
+    assert db.scalar(select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == current)) is None

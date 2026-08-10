@@ -1,9 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Exercise, ExtractedWorkout, Meal, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
+
+function datedPath(path: string, date: string): string {
+  return `${path}?date=${encodeURIComponent(date)}`;
+}
+
+function recordingDateLabel(value: string, index: number): string {
+  const formatted = new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  if (index === 0) return `Today - ${formatted}`;
+  if (index === 1) return `Yesterday - ${formatted}`;
+  return formatted;
+}
 
 function pace(seconds?: number | null): string {
   if (!seconds) return "";
@@ -31,7 +46,7 @@ function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Toda
   const foodLogLocked = today.food_log !== null;
   const action = useMutation({
     mutationFn: (kind: "confirm" | "skip") =>
-      api(`/today/nutrition/${meal.recommendation_id}/${kind}`, { method: "POST" }),
+      api(datedPath(`/today/nutrition/${meal.recommendation_id}/${kind}`, today.date), { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
   });
   return (
@@ -44,7 +59,7 @@ function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Toda
         <button className="primary small" disabled={foodLogLocked || action.isPending || status === "confirmed"} onClick={() => action.mutate("confirm")}>Done</button>
         <button className="quiet small" disabled={foodLogLocked || action.isPending} onClick={() => action.mutate("skip")}>Skip</button>
       </div>
-      {foodLogLocked && <p className="locked-note">Actions are locked because today's food text is the actual record.</p>}
+      {foodLogLocked && <p className="locked-note">Actions are locked because this day's food text is the actual record.</p>}
       {action.error && <p className="error">{action.error.message}</p>}
     </section>
   );
@@ -55,7 +70,7 @@ function FoodLogCard({ today }: { today: Today }) {
   const [text, setText] = useState(today.food_log?.raw_text ?? "");
   const foodLog = today.food_log;
   const save = useMutation({
-    mutationFn: () => api("/today/nutrition/food-log", {
+    mutationFn: () => api(datedPath("/today/nutrition/food-log", today.date), {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
@@ -74,12 +89,12 @@ function FoodLogCard({ today }: { today: Today }) {
   }
   return (
     <section className="card food-log-card">
-      <div className="card-heading"><p className="eyebrow">What I ate today</p>{foodLog && <StatusPill status="processed" />}</div>
+      <div className="card-heading"><p className="eyebrow">What I ate</p>{foodLog && <StatusPill status="processed" />}</div>
       <h2>Record the day in your own words</h2>
-      <p>Submitting this text treats it as the actual record, discards today's food suggestions, and uses AI to estimate average portions and nutrients.</p>
+      <p>Submitting this text treats it as the actual record, discards that day's food suggestions, and uses AI to estimate average portions and nutrients.</p>
       <form onSubmit={submit}>
         <label>Food and drinks<textarea value={text} maxLength={5000} onChange={(event) => setText(event.target.value)} placeholder="Chicken curry with rice, two kiwis, and a bowl of skyr." /></label>
-        <div className="food-log-submit"><small>Only this text, today's food suggestions, and the food catalog are sent for analysis. Your workout is unaffected.</small><button className="primary" disabled={save.isPending || !text.trim()}>{save.isPending ? "Analyzing..." : foodLog ? "Re-analyze and replace record" : "Analyze and record"}</button></div>
+        <div className="food-log-submit"><small>Only this text, that day's food suggestions, and the food catalog are sent for analysis. Your workout is unaffected.</small><button className="primary" disabled={save.isPending || !text.trim()}>{save.isPending ? "Analyzing..." : foodLog ? "Re-analyze and replace record" : "Analyze and record"}</button></div>
       </form>
       {save.error && <p className="error">{save.error.message}</p>}
       {foodLog && <div className="extraction-result">
@@ -238,7 +253,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
   const [stravaMessage, setStravaMessage] = useState("");
   const workoutLog = today.workout_log;
   const analyze = useMutation({
-    mutationFn: () => api<{ raw_text: string; extraction: WorkoutLogExtraction }>("/today/workout/log/analyze", {
+    mutationFn: () => api<{ raw_text: string; extraction: WorkoutLogExtraction }>(datedPath("/today/workout/log/analyze", today.date), {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
@@ -255,7 +270,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
         did_no_workout: draft.workouts.length === 0,
         workouts: draft.workouts.map(submittedWorkout),
       };
-      return api("/today/workout/log", {
+      return api(datedPath("/today/workout/log", today.date), {
         method: "POST",
         body: JSON.stringify({ text, extraction }),
       });
@@ -271,9 +286,9 @@ function WorkoutLogCard({ today }: { today: Today }) {
     },
   });
   const retrieveStrava = useMutation({
-    mutationFn: () => api<StravaSyncResult>("/integrations/strava/sync-today", { method: "POST" }),
+    mutationFn: () => api<StravaSyncResult>(datedPath("/integrations/strava/sync-day", today.date), { method: "POST" }),
     onSuccess: async (result) => {
-      setStravaMessage(result.fetched ? `Retrieved ${result.fetched} ${result.fetched === 1 ? "activity" : "activities"} from Strava.` : "No Strava activities were found for today.");
+      setStravaMessage(result.fetched ? `Retrieved ${result.fetched} ${result.fetched === 1 ? "activity" : "activities"} from Strava.` : "No Strava activities were found for this day.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
@@ -312,7 +327,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
   const reviewError = workoutDraftError(draft);
   return (
     <section className="card workout-log-card">
-      <div className="card-heading"><div><p className="eyebrow">What I trained today</p>{workoutLog && <StatusPill status="processed" />}</div><button type="button" className="quiet small" disabled={retrieveStrava.isPending} onClick={() => { setStravaMessage(""); retrieveStrava.mutate(); }}>{retrieveStrava.isPending ? "Retrieving..." : "Retrieve from Strava"}</button></div>
+      <div className="card-heading"><div><p className="eyebrow">What I trained</p>{workoutLog && <StatusPill status="processed" />}</div><button type="button" className="quiet small" disabled={retrieveStrava.isPending} onClick={() => { setStravaMessage(""); retrieveStrava.mutate(); }}>{retrieveStrava.isPending ? "Retrieving..." : "Retrieve from Strava"}</button></div>
       <h2>Describe the workout in your own words</h2>
       <p>Analyze your description, review every extracted exercise, make any corrections, and submit only when the record is accurate.</p>
       <form onSubmit={submitAnalysis}>
@@ -378,7 +393,7 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
   );
 }
 
-function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternative: () => void }) {
+function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternative?: () => void }) {
   const queryClient = useQueryClient();
   const [difficulty, setDifficulty] = useState(5);
   const [pain, setPain] = useState(false);
@@ -408,7 +423,7 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
           };
         }
       }
-      return api("/today/workout/complete", {
+      return api(datedPath("/today/workout/complete", today.date), {
         method: "POST",
         body: JSON.stringify({ results, difficulty_1_to_10: difficulty, pain_flag: pain, notes: notes || null }),
       });
@@ -416,7 +431,7 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
   });
   const skip = useMutation({
-    mutationFn: () => api("/today/workout/skip", { method: "POST" }),
+    mutationFn: () => api(datedPath("/today/workout/skip", today.date), { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
   });
   if (today.workout.kind === "rest") {
@@ -450,9 +465,9 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
       <div className="actions">
         <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending || workoutLogLocked}>Save completion</button>
         <button className="quiet small" onClick={() => skip.mutate()} disabled={skip.isPending || workoutLogLocked}>Skip workout</button>
-        <button className="quiet small" onClick={onAskAlternative}>Ask for an alternative</button>
+        {onAskAlternative && <button className="quiet small" onClick={onAskAlternative}>Ask for an alternative</button>}
       </div>
-      {workoutLogLocked && <p className="locked-note">Structured actions are locked because today's workout text is the actual record.</p>}
+      {workoutLogLocked && <p className="locked-note">Structured actions are locked because this day's workout text is the actual record.</p>}
       {(complete.error || skip.error) && <p className="error">{complete.error?.message ?? skip.error?.message}</p>}
     </section>
   );
@@ -482,45 +497,51 @@ function ChatPanel({ initialQuestion }: { initialQuestion: string }) {
 export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
-  const today = useQuery({ queryKey: ["today"], queryFn: () => api<Today>("/today") });
-  const details = useQuery({ queryKey: ["today-details"], queryFn: () => api<{ plan: Record<string, unknown>; original_plan: Record<string, unknown> }>("/today/details"), enabled: detailsOpen });
-  if (today.isLoading) return <div className="loading">Building today's plan...</div>;
-  if (today.error || !today.data) return <div className="error-panel"><h1>Today's plan is unavailable</h1><p>{today.error?.message}</p></div>;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedDate = searchParams.get("date");
+  const todayPath = requestedDate ? datedPath("/today", requestedDate) : "/today";
+  const detailsPath = requestedDate ? datedPath("/today/details", requestedDate) : "/today/details";
+  const today = useQuery({ queryKey: ["today", requestedDate ?? "current"], queryFn: () => api<Today>(todayPath) });
+  const details = useQuery({ queryKey: ["today-details", requestedDate ?? "current"], queryFn: () => api<{ plan: Record<string, unknown>; original_plan: Record<string, unknown> }>(detailsPath), enabled: detailsOpen });
+  if (today.isLoading) return <div className="loading">Building the selected day's plan...</div>;
+  if (today.error || !today.data) return <div className="error-panel"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
   const isFood = section === "food";
+  const isHistorical = data.date !== data.recording_dates[0];
+  const tabSearch = isHistorical ? `?date=${encodeURIComponent(data.date)}` : "";
   return (
     <>
-      <header className="page-header"><div><p className="eyebrow">{new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1>{isFood ? "Food & nutrition" : "Exercise"}</h1></div><span className={`source source-${data.source}`}>{data.source === "openai" ? "AI planned" : "Reliable fallback"}</span></header>
+      <header className="page-header"><div><p className="eyebrow">{new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1>{isFood ? "Food & nutrition" : "Exercise"}</h1></div><div className="page-header-actions"><label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label><span className={`source source-${data.source}`}>{data.source === "openai" ? "AI planned" : "Reliable fallback"}</span></div></header>
       <nav className="page-tabs" aria-label="Today's plan sections">
-        <NavLink to="/today/food">Food & nutrition</NavLink>
-        <NavLink to="/today/exercise">Exercise</NavLink>
+        <NavLink to={`/today/food${tabSearch}`}>Food & nutrition</NavLink>
+        <NavLink to={`/today/exercise${tabSearch}`}>Exercise</NavLink>
       </nav>
       <div className="today-grid">
         <div className="main-column">
           {isFood ? <>
             <FoodLogCard key={`food-${data.date}`} today={data} />
-            <MealRegenerationCard today={data} />
+            {!isHistorical && <MealRegenerationCard today={data} />}
             <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
             {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
           </> : <>
-            <WorkoutRegenerationCard today={data} />
-            <WorkoutCard today={data} onAskAlternative={() => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
+            {!isHistorical && <WorkoutRegenerationCard today={data} />}
+            <WorkoutCard key={`structured-${data.date}`} today={data} onAskAlternative={isHistorical ? undefined : () => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
             <WorkoutLogCard key={`workout-${data.date}`} today={data} />
-            {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities today</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
+            {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
           </>}
         </div>
         <aside className="side-column">
-          <section className="card compact"><p className="eyebrow">Current status</p><h3>{data.current_status}</h3><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></section>
+          <section className="card compact"><p className="eyebrow">{isHistorical ? "Status for this day" : "Current status"}</p><h3>{data.current_status}</h3><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></section>
           {isFood ? <>
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small></div>)}</section>
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
-          </> : <section className="card compact"><p className="eyebrow">Today's training</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section>}
+          </> : <section className="card compact"><p className="eyebrow">Training recommendation</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
           {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
         </aside>
       </div>
-      <ChatPanel key={alternativeQuestion} initialQuestion={alternativeQuestion} />
+      {!isHistorical && <ChatPanel key={alternativeQuestion} initialQuestion={alternativeQuestion} />}
       <section className="details-section"><button className="text-button" onClick={() => setDetailsOpen(!detailsOpen)}>{detailsOpen ? "Hide advanced details" : "Why these recommendations? View advanced details"}</button>{detailsOpen && details.data && <div className="card details-card"><pre>{JSON.stringify(details.data.plan, null, 2)}</pre></div>}</section>
     </>
   );

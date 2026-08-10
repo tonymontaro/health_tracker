@@ -1,6 +1,6 @@
 import asyncio
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -25,8 +25,25 @@ from app.services.food_log import FoodLogExtractionError, process_daily_food_log
 from app.services.history import correct_nutrition_entry
 from app.services.metrics import calculate_nutrition_summary
 from app.services.planner.orchestrator import generate_daily_plan
+from app.services.recording_dates import available_recording_dates, resolve_recording_date
 
 TARGET = date(2026, 8, 10)
+
+
+def test_recording_window_includes_today_and_the_previous_seven_days() -> None:
+    api_settings = Settings(
+        SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
+    )
+    available = available_recording_dates(api_settings)
+
+    assert len(available) == 8
+    assert available[-1] == available[0] - timedelta(days=7)
+    assert resolve_recording_date(api_settings, available[-1]) == available[-1]
+    with pytest.raises(ValueError, match="previous 7 days"):
+        resolve_recording_date(api_settings, available[0] - timedelta(days=8))
+    with pytest.raises(ValueError, match="previous 7 days"):
+        resolve_recording_date(api_settings, available[0] + timedelta(days=1))
 
 
 def extraction(
@@ -225,7 +242,8 @@ def test_food_log_endpoint_requires_auth_and_records_with_bearer_token(
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
-    target = local_today(api_settings)
+    current = local_today(api_settings)
+    target = current - timedelta(days=1)
     plan = generate_daily_plan(db, api_settings, target, use_ai=False)
     recommendation = db.scalar(
         select(NutritionEntry).where(
@@ -251,26 +269,42 @@ def test_food_log_endpoint_requires_auth_and_records_with_bearer_token(
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_settings] = lambda: api_settings
 
-    async def make_requests() -> tuple[Response, Response, Response]:
+    async def make_requests() -> tuple[Response, Response, Response, Response, Response]:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
             unauthenticated_response = await client.post(
-                "/api/v1/today/nutrition/food-log",
+                f"/api/v1/today/nutrition/food-log?date={target.isoformat()}",
                 json={"text": "A chicken and rice bowl."},
             )
             authenticated_response = await client.post(
-                "/api/v1/today/nutrition/food-log",
+                f"/api/v1/today/nutrition/food-log?date={target.isoformat()}",
                 headers={"Authorization": f"Bearer {raw_token}"},
                 json={"text": "A chicken and rice bowl."},
             )
-            today_response = await client.get(
-                "/api/v1/today",
+            selected_day_response = await client.get(
+                f"/api/v1/today?date={target.isoformat()}",
                 headers={"Authorization": f"Bearer {raw_token}"},
             )
-        return unauthenticated_response, authenticated_response, today_response
+            current_day_response = await client.get(
+                "/api/v1/today", headers={"Authorization": f"Bearer {raw_token}"}
+            )
+            out_of_range_response = await client.post(
+                f"/api/v1/today/nutrition/food-log?date={(current - timedelta(days=8)).isoformat()}",
+                headers={"Authorization": f"Bearer {raw_token}"},
+                json={"text": "This must not be recorded."},
+            )
+        return (
+            unauthenticated_response,
+            authenticated_response,
+            selected_day_response,
+            current_day_response,
+            out_of_range_response,
+        )
 
     try:
-        unauthenticated, response, today_response = asyncio.run(make_requests())
+        unauthenticated, response, selected_day, current_day, out_of_range = asyncio.run(
+            make_requests()
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -279,8 +313,16 @@ def test_food_log_endpoint_requires_auth_and_records_with_bearer_token(
     assert response.json()["matched_recommendation_ids"] == [
         recommendation.planned_recommendation_id
     ]
-    assert today_response.status_code == 200
-    assert today_response.json()["emergency_plate"]["name"] == "Emergency protein plate"
-    assert today_response.json()["emergency_plate"]["hands_on_minutes"] == 3
+    assert selected_day.status_code == 200
+    assert selected_day.json()["date"] == target.isoformat()
+    assert selected_day.json()["food_log"]["status"] == "processed"
+    assert len(selected_day.json()["recording_dates"]) == 8
+    assert current_day.status_code == 200
+    assert current_day.json()["date"] == current.isoformat()
+    assert current_day.json()["food_log"] is None
+    assert selected_day.json()["emergency_plate"]["name"] == "Emergency protein plate"
+    assert selected_day.json()["emergency_plate"]["hands_on_minutes"] == 3
+    assert out_of_range.status_code == 422
+    assert out_of_range.json()["detail"] == "Date must be today or within the previous 7 days."
     db.refresh(plan)
     assert plan.status == "active"
