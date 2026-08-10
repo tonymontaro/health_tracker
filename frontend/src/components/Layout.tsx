@@ -14,9 +14,18 @@ export function Layout() {
           <NavLink to="/history">History</NavLink>
           <NavLink to="/shopping">Shopping</NavLink>
           <NavLink to="/settings">Settings</NavLink>
+          <NavLink
+            to="https://solve.anthonyngene.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Study
+          </NavLink>
         </nav>
       </header>
-      <main className="page"><Outlet /></main>
+      <main className="page">
+        <Outlet />
+      </main>
     </div>
   );
 }
