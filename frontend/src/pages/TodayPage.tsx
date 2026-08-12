@@ -82,6 +82,38 @@ function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Toda
   );
 }
 
+function NutritionSuggestionActions({
+  recommendationId,
+  today,
+}: {
+  recommendationId: string;
+  today: Today;
+}) {
+  const queryClient = useQueryClient();
+  const status = today.nutrition_status[recommendationId]?.status ?? "planned";
+  const foodLogLocked = today.food_log !== null;
+  const action = useMutation({
+    mutationFn: (kind: "confirm" | "skip") =>
+      api(datedPath(`/today/nutrition/${recommendationId}/${kind}`, today.date), {
+        method: "POST",
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+      ]);
+    },
+  });
+  return <>
+    <div className="actions">
+      <button className="primary small" disabled={foodLogLocked || action.isPending || status === "confirmed"} onClick={() => action.mutate("confirm")}>Done</button>
+      <button className="quiet small" disabled={foodLogLocked || action.isPending || status === "skipped"} onClick={() => action.mutate("skip")}>Skip</button>
+    </div>
+    {action.error && <p className="error">{action.error.message}</p>}
+  </>;
+}
+
 function FoodLogCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState(today.food_log?.raw_text ?? "");
@@ -150,7 +182,7 @@ function MealRegenerationCard({ today }: { today: Today }) {
       : null;
   return (
     <section className="card meal-regeneration-card">
-      <div><p className="eyebrow">Scheduled meals</p><strong>Want fresh recommendations?</strong><small>Generate different catalog meals while keeping today's workout unchanged.</small>{disabledReason && <small>{disabledReason}</small>}</div>
+      <div><p className="eyebrow">Scheduled meals</p><strong>Want fresh recommendations?</strong><small>Generate different meals: one quick and easy, one more special, while keeping today's workout unchanged.</small>{disabledReason && <small>{disabledReason}</small>}</div>
       <button className="quiet" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate meals"}</button>
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
@@ -607,12 +639,11 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
           </>}
         </div>
         <aside className="side-column">
-          <section className="card compact"><p className="eyebrow">{isHistorical ? "Status for this day" : "Current status"}</p><h3>{data.current_status}</h3><p>Recovery: {data.recovery_status.replaceAll("_", " ")}</p></section>
           {isFood ? <>
-            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p><div className="chips">{data.nutrition.fruits.map((fruit) => <span key={fruit.recommendation_id}>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></span>)}</div></section>
-            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small></div>)}</section>
+            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p>{data.nutrition.fruits.map((fruit) => <div className="list-item" key={fruit.recommendation_id}><strong>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></strong><NutritionSuggestionActions recommendationId={fruit.recommendation_id} today={data} /></div>)}</section>
+            <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small><NutritionSuggestionActions recommendationId={snack.recommendation_id} today={data} /></div>)}</section>
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
-          </> : <section className="card compact"><p className="eyebrow">Training recommendation</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section>}
+          </> : <><section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section><section className="card compact"><p className="eyebrow">Training recommendation</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section></>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
           {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
         </aside>

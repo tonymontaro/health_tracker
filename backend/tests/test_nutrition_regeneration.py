@@ -105,6 +105,8 @@ def test_regeneration_replaces_double_emergency_meals_and_preserves_workout(
     assert sum(item.source == "regenerated_fallback" for item in modifications) == 2
     run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
     assert run and run.status == "fallback"
+    assert run.context_snapshot_json["nutrition_regeneration"]["preserved_workout"] == original_workout
+    assert "training demand" in plan.current_plan_json["nutrition"]["guidance"]
 
 
 def test_regeneration_rejects_a_resolved_meal_without_changing_plan(

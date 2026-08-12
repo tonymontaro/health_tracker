@@ -1,8 +1,12 @@
 import argparse
 import json
 from datetime import date
+from pathlib import Path
+
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.db.models import UserProfile
 from app.db.session import SessionLocal
 from app.jobs.scheduler import run_scheduler
 from app.jobs.tasks import (
@@ -13,6 +17,7 @@ from app.jobs.tasks import (
     send_morning_email,
 )
 from app.services.catalog import seed_all
+from app.services.garmin_import import import_garmin_csv
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     job.add_argument("--date", default=date.today().isoformat())
     job.add_argument("--no-ai", action="store_true")
     subparsers.add_parser("scheduler")
+    garmin = subparsers.add_parser("import-garmin")
+    garmin.add_argument("--file", required=True, type=Path)
+    goal = subparsers.add_parser("set-goal")
+    goal.add_argument("--text", required=True)
     return parser
 
 
@@ -43,6 +52,17 @@ def main() -> None:
         if args.command == "seed":
             profile = seed_all(db, settings)
             print(json.dumps({"profile_id": str(profile.id), "status": "seeded"}))
+            return
+        if args.command == "import-garmin":
+            print(json.dumps(import_garmin_csv(db, args.file)))
+            return
+        if args.command == "set-goal":
+            target_profile = db.scalar(select(UserProfile))
+            if target_profile is None:
+                raise RuntimeError("Profile must be seeded before setting a goal")
+            target_profile.current_target_goal = args.text.strip() or None
+            db.commit()
+            print(json.dumps({"status": "saved"}))
             return
         target = date.fromisoformat(args.date)
         if args.command == "plan":

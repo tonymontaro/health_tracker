@@ -102,6 +102,24 @@ Seed the user profile, equipment, exercise catalog, foods, and 17 curated meal t
 
 Seed operations are idempotent.
 
+## Import Garmin activity history
+
+Garmin Connect activity CSV exports can be imported into canonical workout history:
+
+```bash
+.venv/bin/health-autopilot import-garmin --file "/path/to/Activities.csv"
+```
+
+Imports are idempotent. Each row retains Garmin CSV provenance and the available distance, time,
+pace, elevation, heart-rate, cadence, power, calories, and training-effect fields. Imported workouts
+feed the same derived metrics and AI context as other completed workouts.
+
+The active target can be edited in Settings or set from the command line:
+
+```bash
+.venv/bin/health-autopilot set-goal --text "Race, distance, elevation, date, and target time"
+```
+
 ## Run the backend
 
 ```bash

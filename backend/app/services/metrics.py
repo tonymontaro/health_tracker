@@ -107,6 +107,55 @@ def calculate_training_summary(db: Session, as_of: date) -> dict[str, Any]:
     }
 
 
+def calculate_goal_progress_evidence(db: Session, as_of: date) -> dict[str, Any]:
+    """Return compact recorded evidence for comparison with the free-text goal."""
+    since = as_of - timedelta(days=179)
+    entries = list(
+        db.scalars(
+            select(WorkoutEntry).where(
+                WorkoutEntry.entry_date.between(since, as_of),
+                WorkoutEntry.status.in_(["completed", "partial"]),
+            )
+        )
+    )
+    runs = [entry for entry in entries if entry.prescription_json.get("exercise_type") == "run"]
+    evidence: list[dict[str, Any]] = []
+    for entry in runs:
+        actual = entry.actual_json or {}
+        distance = float(actual.get("distance_km") or 0)
+        duration = int(actual.get("duration_seconds") or 0)
+        if distance <= 0 or duration <= 0:
+            continue
+        evidence.append(
+            {
+                "date": entry.entry_date.isoformat(),
+                "distance_km": round(distance, 3),
+                "duration_seconds": duration,
+                "pace_seconds_per_km": round(duration / distance),
+                "elevation_gain_m": actual.get("elevation_gain_m"),
+                "average_heartrate_bpm": actual.get("average_heartrate_bpm"),
+                "max_heartrate_bpm": actual.get("max_heartrate_bpm"),
+                "source": entry.source,
+            }
+        )
+    recent = sorted(evidence, key=lambda item: item["date"], reverse=True)
+    longest = sorted(evidence, key=lambda item: item["distance_km"], reverse=True)[:5]
+    cutoff_28d = (as_of - timedelta(days=27)).isoformat()
+    return {
+        "evidence_window_days": 180,
+        "run_count": len(evidence),
+        "running_distance_28d_km": round(
+            sum(item["distance_km"] for item in evidence if item["date"] >= cutoff_28d), 1
+        ),
+        "recent_runs": recent[:12],
+        "longest_runs": longest,
+        "interpretation": (
+            "Compare recorded performances with the current target goal. Any projected race time "
+            "or readiness percentage is an estimate and must state assumptions, including terrain."
+        ),
+    }
+
+
 def calculate_nutrition_summary(db: Session, as_of: date) -> dict[str, Any]:
     since_14 = as_of - timedelta(days=13)
     entries = list(

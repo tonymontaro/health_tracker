@@ -59,7 +59,14 @@ def regenerate_workout(
         "requested": True,
         "instruction": (
             "Regenerate today's workout only. Use the refreshed training history, especially "
-            "completed activity from yesterday. Nutrition, shopping, and preparation content "
+            "completed activity from yesterday. Treat current_target_goal as the active outcome "
+            "and the primary training goal as the hybrid constraint. The rationale summary must "
+            "explicitly name the current target. When the target contains measurable distance/time "
+            "details, compare it with goal_progress_evidence and give a concise numerical progress "
+            "estimate or projected performance range, clearly labelled as an estimate with its main "
+            "terrain/data assumptions. The progression_logic must explain how today's workout moves "
+            "the athlete toward that target, even when today's best choice is strength or recovery. "
+            "Nutrition, shopping, and preparation content "
             "will be preserved by the application. A true rest plan must have kind 'rest', "
             "intensity 'rest', no exercises, and zero duration. If any recovery movement is "
             "prescribed, use kind 'recovery' with recovery exercises and a positive duration."
@@ -187,7 +194,27 @@ def _candidate_errors(
         merged = _merge_candidate(current, document)
     except ValueError as exc:
         return [str(exc)]
-    return validate_plan(db, proposal_from_document(merged), profile, current.plan_date)
+    errors = validate_plan(db, proposal_from_document(merged), profile, current.plan_date)
+    if source == "openai" and profile.current_target_goal:
+        rationale_text = " ".join(
+            [
+                candidate.rationale.summary,
+                candidate.rationale.progression_logic,
+                *candidate.rationale.objectives,
+            ]
+        ).casefold()
+        goal_terms = [
+            term
+            for term in profile.current_target_goal.casefold().replace("–", " ").split()
+            if len(term) >= 5
+        ]
+        if goal_terms and not any(term.strip(".,:;") in rationale_text for term in goal_terms):
+            errors.append("The rationale must explicitly connect today's workout to the current target goal.")
+        if not any(char.isdigit() for char in candidate.rationale.summary):
+            errors.append(
+                "The rationale summary must include a numerical goal-progress estimate or projected range."
+            )
+    return errors
 
 
 def _merge_candidate(current: DailyPlanDocument, candidate: DailyPlanDocument) -> DailyPlanDocument:

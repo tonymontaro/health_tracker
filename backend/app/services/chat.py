@@ -13,6 +13,8 @@ from app.services.planner.context import build_planner_context
 QA_SYSTEM_PROMPT = """Answer questions about today's personal health and hybrid training plan.
 Use only the supplied profile, plan, history, inventory, and constraints.
 Be concise and practical. Clearly distinguish recorded facts, calculations, estimates, and goals.
+When a current target goal exists, use goal_progress_evidence to estimate proximity when relevant and
+state assumptions behind any projected time or readiness percentage.
 Do not diagnose medical conditions. Concerning symptoms or pain should lead to cautious advice and professional care.
 You may propose one structured replacement, but never claim it was applied.
 A proposed_change must contain recommendation_id, replacement, and reason, or be null.

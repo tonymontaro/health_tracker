@@ -6,36 +6,10 @@ from openai import DEFAULT_MAX_RETRIES, InternalServerError
 
 from app.core.config import Settings
 from app.services.planner.openai_planner import (
-    SYSTEM_PROMPT,
     OpenAIPlanner,
     PlannerProviderError,
     _provider_error_summary,
-    _readable_prompt_log,
 )
-
-
-def test_readable_prompt_log_has_human_friendly_sections() -> None:
-    output = _readable_prompt_log(
-        "EXERCISE RECOMMENDATION REGENERATION · ATTEMPT 2",
-        "test-model",
-        "medium",
-        {"plan_date": "2030-01-01", "history": {"completed": ["Easy run"]}},
-        {"instruction": "Regenerate the workout only.", "errors": ["Use a lower load."]},
-    )
-
-    assert "OPENAI PROMPT · EXERCISE RECOMMENDATION REGENERATION · ATTEMPT 2" in output
-    assert "Model: test-model" in output
-    assert "Reasoning effort: medium" in output
-    assert "SYSTEM PROMPT\n" + SYSTEM_PROMPT.strip() in output
-    assert "USER PROMPT · PlannerContext" in output
-    assert '  "history": {' in output
-    assert '    "completed": [' in output
-    assert "USER PROMPT · Correction request" in output
-    assert '  "errors": [' in output
-    assert 'A true rest plan must use kind "rest"' in output
-    assert 'Light recovery\nmovement must instead use kind "recovery"' in output
-    assert "self-contained, simple recipe with\nconcise numbered steps" in output
-    assert "Use as many steps as the recipe needs" in output
 
 
 def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors() -> None:

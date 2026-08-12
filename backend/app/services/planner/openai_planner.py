@@ -21,6 +21,9 @@ concise numbered steps. Use every listed ingredient, include cooking times and t
 relevant, and explain how to portion batch recipes. Use as many steps as the recipe needs without
 adding unnecessary detail. Do not require unlisted ingredients except optional water or basic
 seasoning. Never return only a meal name or generic preparation advice.
+For nutrition regeneration, treat nutrition_regeneration.preserved_workout as immutable and tailor
+meal choices, carbohydrate availability, protein support, timing, and guidance to that workout's
+type, intensity, duration, and expected difficulty. Do not modify the preserved workout.
 Never prescribe more than three exercises.
 Gym-only work is allowed only on Saturday or Sunday.
 Thursday is rest or at most very light recovery movement.
@@ -34,6 +37,9 @@ Running needs distance, pace in seconds per km, duration, treadmill speed when r
 Cycling needs duration plus power when supported, otherwise cadence and expected difficulty for calibration.
 Do not invent unknown capacity, FTP, medical facts, recent results, or exact nutrition precision.
 Do not progress a movement associated with pain. Change only one major training variable at a time.
+Treat current_target_goal as the active outcome while preserving the primary hybrid-training goal.
+Use goal_progress_evidence to estimate readiness and choose useful progression. Clearly label race-time
+or readiness estimates as estimates, state material terrain/data assumptions, and never invent results.
 Use at most one preparation action. Prefer batch cooking, inventory use, and 5-10 active minutes.
 Do not provide medical diagnosis. Recommend professional help for concerning pain or symptoms.
 Do not output hidden chain-of-thought. Rationale must be concise and user-facing.
@@ -67,13 +73,11 @@ class OpenAIPlanner:
             prompt += json.dumps(correction, default=str, separators=(",", ":"))
         if prompt_label:
             logger.info(
-                _readable_prompt_log(
-                    prompt_label,
-                    self.settings.openai_planner_model,
-                    self.settings.openai_reasoning_effort,
-                    context,
-                    correction,
-                )
+                "OpenAI planning request · %s · model=%s · reasoning=%s · correction=%s",
+                prompt_label,
+                self.settings.openai_planner_model,
+                self.settings.openai_reasoning_effort,
+                correction is not None,
             )
         try:
             response = self.client.responses.parse(
@@ -109,36 +113,3 @@ def _provider_error_summary(error: OpenAIError) -> str:
         details.append(type(error).__name__)
     return " · ".join(details)
 
-
-def _readable_prompt_log(
-    label: str,
-    model: str,
-    reasoning_effort: str,
-    context: dict[str, Any],
-    correction: dict[str, Any] | None,
-) -> str:
-    border = "=" * 88
-    divider = "-" * 88
-    sections = [
-        "",
-        border,
-        f"OPENAI PROMPT · {label}",
-        f"Model: {model}",
-        f"Reasoning effort: {reasoning_effort}",
-        divider,
-        "SYSTEM PROMPT",
-        SYSTEM_PROMPT.strip(),
-        divider,
-        "USER PROMPT · PlannerContext",
-        json.dumps(context, default=str, indent=2, sort_keys=True),
-    ]
-    if correction:
-        sections.extend(
-            [
-                divider,
-                "USER PROMPT · Correction request",
-                json.dumps(correction, default=str, indent=2, sort_keys=True),
-            ]
-        )
-    sections.append(border)
-    return "\n".join(sections)

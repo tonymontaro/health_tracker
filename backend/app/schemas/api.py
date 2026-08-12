@@ -29,6 +29,7 @@ class ProfileResponse(BaseModel):
     sex: str | None
     body_composition_goal: str | None
     primary_training_goal: str
+    current_target_goal: str | None
     max_main_meals_per_day: int
     preferred_main_meals_per_day: int
     max_exercises_per_day: int
@@ -52,6 +53,7 @@ class ProfileUpdate(BaseModel):
     sex: str | None = None
     body_composition_goal: str | None = None
     primary_training_goal: str | None = None
+    current_target_goal: str | None = Field(default=None, max_length=4000)
     max_main_meals_per_day: int | None = Field(default=None, ge=1, le=2)
     preferred_main_meals_per_day: int | None = Field(default=None, ge=1, le=2)
     max_exercises_per_day: int | None = Field(default=None, ge=1, le=3)

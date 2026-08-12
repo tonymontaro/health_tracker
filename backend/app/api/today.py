@@ -162,6 +162,7 @@ def get_today(
 ) -> dict[str, Any]:
     plan = _plan(db, settings, target_date)
     document = plan.current_plan_json
+    profile = db.scalar(select(UserProfile))
     nutrition_status, workout_status = _status_maps(db, plan.plan_date)
     return {
         "date": plan.plan_date.isoformat(),
@@ -169,6 +170,8 @@ def get_today(
         "source": document["source"],
         "current_status": document["profile_snapshot"]["short_summary"],
         "recovery_status": document["profile_snapshot"]["recovery_status"],
+        "current_target_goal": profile.current_target_goal if profile else None,
+        "rationale": document["rationale"],
         "nutrition": document["nutrition"],
         "workout": document["workout"],
         "next_action": document["prep_actions"][0] if document["prep_actions"] else None,

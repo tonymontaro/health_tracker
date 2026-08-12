@@ -44,6 +44,8 @@ def update_profile(
     for required in ("timezone", "location", "primary_training_goal"):
         if required in changes and not changes[required]:
             raise HTTPException(status_code=422, detail=f"{required} cannot be empty")
+    if "current_target_goal" in changes and changes["current_target_goal"] is not None:
+        changes["current_target_goal"] = changes["current_target_goal"].strip() or None
     if "timezone" in changes and changes["timezone"]:
         try:
             ZoneInfo(changes["timezone"])

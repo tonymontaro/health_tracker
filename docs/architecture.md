@@ -87,7 +87,7 @@ Food logging does not alter the canonical plan or workout entries.
 Strava OAuth and scheduled sync          Free-text workout diary
                  |                                  |
                  v                                  v
-      normalized Strava activity          OpenAI Structured Output
+ normalized Strava / Garmin activity      OpenAI Structured Output
                  |                                  |
                  +---------------+------------------+
                                  |
@@ -112,6 +112,14 @@ Strava OAuth and scheduled sync          Free-text workout diary
 `strava_activity_match` links one activity to one or more materialized workout entries and retains the previous entry state for safe deletion or disconnect handling.
 Strava payloads are reduced to decision-relevant actual workout fields before they enter planner context.
 Exact strength volume is never inferred from a generic Strava strength session.
+
+Garmin Connect CSV imports are idempotently fingerprinted in `imported_activity` and materialized as
+completed `workout_entry` records with `garmin_csv` provenance. The import preserves decision-relevant
+watch measurements without requiring a live provider connection.
+
+The profile's optional `current_target_goal` is flexible free text. Planner and coaching contexts pair
+it with calculated 180-day running evidence, while preserving the broader hybrid-training goal and hard
+constraints. Race-time and readiness comparisons remain explicitly labelled estimates.
 
 `daily_workout_log` preserves the user's source text, validated extraction, and the prior state of entries it controls.
 The external AI call and validation finish before the transaction begins.

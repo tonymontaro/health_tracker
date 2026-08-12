@@ -78,6 +78,7 @@ class UserProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sex: Mapped[str | None] = mapped_column(String(40))
     body_composition_goal: Mapped[str | None] = mapped_column(Text)
     primary_training_goal: Mapped[str] = mapped_column(Text)
+    current_target_goal: Mapped[str | None] = mapped_column(Text)
     max_main_meals_per_day: Mapped[int] = mapped_column(Integer, default=2)
     preferred_main_meals_per_day: Mapped[int] = mapped_column(Integer, default=2)
     max_exercises_per_day: Mapped[int] = mapped_column(Integer, default=3)
@@ -269,6 +270,20 @@ class WorkoutEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     workout_log_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("daily_workout_log.id", ondelete="SET NULL"), index=True
     )
+
+
+class ImportedActivity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "imported_activity"
+    __table_args__ = (UniqueConstraint("provider", "source_id"),)
+
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    source_id: Mapped[str] = mapped_column(String(64))
+    workout_entry_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workout_entry.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    activity_date: Mapped[date] = mapped_column(Date, index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
 
 
 class StravaOAuthState(UUIDPrimaryKeyMixin, Base):

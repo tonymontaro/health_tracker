@@ -63,9 +63,18 @@ def regenerate_nutrition(
         "requested": True,
         "required_main_meal_count": len(current_meals),
         "forbidden_main_meal_templates": sorted(forbidden_names),
+        "preserved_workout": current.workout.model_dump(mode="json"),
         "instruction": (
             "Regenerate the scheduled main meals only. The emergency protein plate remains an "
-            "optional fallback and must not be scheduled as Meal 1 or Meal 2."
+            "optional fallback and must not be scheduled as Meal 1 or Meal 2. Never repeat either "
+            "currently scheduled meal. When there are two meals, make Meal 1 genuinely quick and "
+            "easy, and use Meal 2 as the more special, higher-effort option; variety and enjoyment "
+            "matter more than the normal low-effort preference for Meal 2. The preserved_workout is "
+            "today's scheduled workout and must remain unchanged. Tailor meal selection, carbohydrate "
+            "availability, protein support, suggested timing, and nutrition guidance to its type, "
+            "intensity, duration, and expected difficulty. A rest or recovery day should not be "
+            "fuelled like a hard endurance day. Use only supplied meal templates and do not invent "
+            "precise nutrient values that are absent from the context."
         ),
     }
     candidate, source, validation = _generate_candidate(
@@ -189,6 +198,21 @@ def _candidate_errors(
         )
     if len({name.casefold() for name in names}) != len(names):
         errors.append("Regenerated main meals must be distinct.")
+    templates = {
+        template.name.casefold(): template
+        for template in db.scalars(select(MealTemplate).where(MealTemplate.active.is_(True)))
+    }
+    selected_templates = [templates.get(name.casefold()) for name in names]
+    if (
+        len(selected_templates) == 2
+        and selected_templates[0] is not None
+        and selected_templates[1] is not None
+    ):
+        easy, nicer = selected_templates[0], selected_templates[1]
+        if easy.effort_score > 2 or easy.hands_on_minutes > 20:
+            errors.append("Meal 1 must be the quick, easy-to-prepare option.")
+        if nicer.effort_score <= easy.effort_score:
+            errors.append("Meal 2 must be the more special, higher-effort option.")
     try:
         merged = _merge_candidate(current, candidate, "openai")
     except ValueError as exc:
@@ -229,7 +253,9 @@ def _deterministic_candidate(
     )
     if len(templates) < meal_count:
         raise NutritionRegenerationError("Not enough eligible meal templates are available")
-    selected = templates[:meal_count]
+    selected = (
+        [templates[0], templates[-1]] if meal_count == 2 else [templates[0]]
+    )
     meals = [
         _proposal_from_template(
             template,
@@ -242,9 +268,13 @@ def _deterministic_candidate(
         meal_2=meals[1] if len(meals) == 2 else None,
         fruits=base.nutrition.fruits,
         snacks=base.nutrition.snacks,
-        expected_main_meals=meal_count,
+        expected_main_meals=2 if meal_count == 2 else 1,
         approximate_protein_g=min(350, sum(meal.estimated_protein_g for meal in meals) + 30),
-        guidance="Fresh main meals were generated from the curated catalog. The emergency plate remains optional.",
+        guidance=(
+            f"Meal 1 is the easy option and Meal 2 is the more special option, selected alongside "
+            f"today's {base.workout.kind} training demand. Both differ from the prior recommendations, "
+            "and the emergency plate remains optional."
+        ),
     )
     batch_template = next((template for template in selected if template.batch_size > 1), None)
     base.prep_actions = (

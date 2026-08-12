@@ -149,6 +149,15 @@ export type Today = {
   source: "openai" | "fallback";
   current_status: string;
   recovery_status: string;
+  current_target_goal: string | null;
+  rationale: {
+    summary: string;
+    objectives: string[];
+    progression_logic: string;
+    history_factors: string[];
+    recovery_factors: string[];
+    scheduling_factors: string[];
+  };
   nutrition: {
     meal_1: Meal;
     meal_2: Meal | null;
@@ -194,6 +203,7 @@ export type Profile = {
   sex: string | null;
   body_composition_goal: string | null;
   primary_training_goal: string;
+  current_target_goal: string | null;
   max_main_meals_per_day: number;
   preferred_main_meals_per_day: number;
   max_exercises_per_day: number;

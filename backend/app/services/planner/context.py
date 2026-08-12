@@ -16,7 +16,7 @@ from app.db.models import (
     UserProfile,
 )
 from app.schemas.plan import ProfileSnapshotSummary
-from app.services.metrics import recalculate_derived_summary
+from app.services.metrics import calculate_goal_progress_evidence, recalculate_derived_summary
 from app.services.planner.domain import exercise_equipment_available
 
 
@@ -48,7 +48,7 @@ def build_profile_snapshot(
         f"Bench capacity: {profile.strength_capacity_json.get('bench_press', 'unknown')}. "
         f"Strict pull-up capacity: {profile.strength_capacity_json.get('strict_pull_up', 'unknown')}. "
         f"Training: {training_status} "
-        "Goal: build comfortable 8-12 km running while retaining substantial strength."
+        f"Current target: {profile.current_target_goal or profile.primary_training_goal}."
     )
     snapshot = ProfileSnapshot(
         snapshot_date=snapshot_date,
@@ -155,6 +155,7 @@ def build_planner_context(
             "sex": profile.sex,
             "body_composition_goal": profile.body_composition_goal,
             "primary_training_goal": profile.primary_training_goal,
+            "current_target_goal": profile.current_target_goal,
             "nutrition_preferences": profile.nutrition_preferences,
             "allergies": profile.allergies,
             "medical_constraints": profile.medical_constraints,
@@ -173,6 +174,9 @@ def build_planner_context(
         "training_summary_28d": training_summary,
         "recent_training_sessions": recent_sessions,
         "last_run_outside_recent_sessions": last_run_outside_recent_sessions,
+        "goal_progress_evidence": calculate_goal_progress_evidence(
+            db, plan_date - timedelta(days=1)
+        ),
         "current_inventory": [
             {
                 "food": food.name,
