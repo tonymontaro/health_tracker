@@ -4,7 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import DailyPlan, NotificationEvent, ShoppingPlan
+from app.db.models import (
+    DailyPlan,
+    NotificationEvent,
+    NutritionEntry,
+    ShoppingPlan,
+    UserProfile,
+    WorkoutEntry,
+)
+from app.services.coach import coach_message
 from app.services.email import ResendEmailService, evening_email, morning_email
 from app.services.history import reconcile_day
 from app.services.planner.orchestrator import generate_daily_plan
@@ -56,10 +64,32 @@ def _send_plan_email(
     plan = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date))
     if plan is None:
         plan = generate_daily_plan(db, settings, target_date)
+    profile = db.scalar(select(UserProfile))
+    coach_facts = {
+        "current_target_goal": profile.current_target_goal if profile else None,
+        "plan_summary": plan.current_plan_json.get("short_summary"),
+        "workout": plan.current_plan_json.get("workout"),
+        "nutrition_guidance": plan.current_plan_json.get("nutrition", {}).get("guidance"),
+    }
     if event_type == "morning_email":
-        subject, text, html = morning_email(plan.current_plan_json, settings.app_base_url)
+        note = coach_message(settings, moment="morning_email", facts=coach_facts)
+        subject, text, html = morning_email(plan.current_plan_json, settings.app_base_url, note)
     else:
-        subject, text, html = evening_email(plan.current_plan_json, settings.app_base_url)
+        workout_entries = list(
+            db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target_date))
+        )
+        nutrition_entries = list(
+            db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == target_date))
+        )
+        coach_facts["actual_status"] = {
+            "workouts_completed": sum(entry.status in {"completed", "partial"} for entry in workout_entries),
+            "workouts_unresolved_or_skipped": sum(entry.status not in {"completed", "partial"} for entry in workout_entries),
+            "nutrition_confirmed": sum(entry.status in {"confirmed", "assumed_consumed"} for entry in nutrition_entries),
+            "nutrition_unresolved_or_skipped": sum(entry.status not in {"confirmed", "assumed_consumed"} for entry in nutrition_entries),
+            "pain_recorded": any(entry.pain_flag for entry in workout_entries),
+        }
+        note = coach_message(settings, moment="evening_email", facts=coach_facts)
+        subject, text, html = evening_email(plan.current_plan_json, settings.app_base_url, note)
     try:
         recipient = settings.resend_to
         if not recipient:

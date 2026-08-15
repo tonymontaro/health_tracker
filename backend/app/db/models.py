@@ -234,6 +234,16 @@ class DailyWorkoutLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(40), default="processed")
 
 
+class WorkoutCoachFeedback(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "workout_coach_feedback"
+    __table_args__ = (UniqueConstraint("feedback_date"),)
+
+    feedback_date: Mapped[date] = mapped_column(Date, index=True)
+    message: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String(160))
+    context_snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
 class NutritionEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "nutrition_entry"
     __table_args__ = (UniqueConstraint("entry_date", "planned_recommendation_id"),)

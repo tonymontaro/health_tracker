@@ -95,6 +95,7 @@ export type StravaSyncResult = {
   created: number;
   updated: number;
   matched: number;
+  coach_feedback?: string;
 };
 
 export type StravaIntegration = {
@@ -158,6 +159,7 @@ export type Today = {
     recovery_factors: string[];
     scheduling_factors: string[];
   };
+  coach_feedback: string | null;
   nutrition: {
     meal_1: Meal;
     meal_2: Meal | null;

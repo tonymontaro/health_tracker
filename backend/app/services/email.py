@@ -253,7 +253,9 @@ def emergency_plate_html() -> str:
     )
 
 
-def morning_email(plan: dict[str, Any], app_url: str) -> tuple[str, str, str]:
+def morning_email(
+    plan: dict[str, Any], app_url: str, coach_note: str | None = None
+) -> tuple[str, str, str]:
     nutrition = plan["nutrition"]
     meal_sections = [meal_text("Meal 1", nutrition["meal_1"])]
     meal_html_sections = [meal_html("Meal 1", nutrition["meal_1"])]
@@ -289,7 +291,10 @@ def morning_email(plan: dict[str, Any], app_url: str) -> tuple[str, str, str]:
         prep = "Nothing needed"
     shopping = plan["shopping"]["summary"]
     guidance = nutrition.get("guidance")
-    text = f"""Current status
+    text = f"""Coach Forge
+{coach_note or "The plan is set. Execute it."}
+
+Current status
 {plan["profile_snapshot"]["short_summary"]}
 
 Meals
@@ -317,6 +322,7 @@ Shopping
 Open today's plan: {app_url}/today
 """
     html = f"""<html><body style="font-family:system-ui;line-height:1.5;color:#17332d">
+<h2>Coach Forge</h2><p><strong>{escape(coach_note or "The plan is set. Execute it.")}</strong></p>
 <h2>Today</h2><p>{escape(plan["profile_snapshot"]["short_summary"])}</p>
 <h2>Meals</h2>{"".join(meal_html_sections)}
 <h3>Fruit options</h3>{f"<ul>{fruit_html}</ul>" if fruit_html else "<p>None planned</p>"}
@@ -329,10 +335,15 @@ Open today's plan: {app_url}/today
     return "Today - meals, training and next action", text, html
 
 
-def evening_email(plan: dict[str, Any], app_url: str) -> tuple[str, str, str]:
+def evening_email(
+    plan: dict[str, Any], app_url: str, coach_note: str | None = None
+) -> tuple[str, str, str]:
     meals = plan["nutrition"]["expected_main_meals"]
     workout = workout_line(plan["workout"])
-    text = f"""Planned today:
+    text = f"""Coach Forge
+{coach_note or "Close the ledger honestly."}
+
+Planned today:
 {meals} main meal{"s" if meals != 1 else ""}
 {workout}
 
@@ -345,6 +356,7 @@ Please also enter the workout result and difficulty.
 Complete today's check-in: {app_url}/today
 """
     html = f"""<html><body style="font-family:system-ui;line-height:1.5;color:#17332d">
+<h2>Coach Forge</h2><p><strong>{escape(coach_note or "Close the ledger honestly.")}</strong></p>
 <h2>Quick check-in</h2><p>Planned today: {meals} main meal{"s" if meals != 1 else ""}<br>{escape(workout)}</p>
 <h3>Emergency option</h3>{emergency_plate_html()}
 <p>If anything differed, record it now. Please also enter workout results and difficulty.</p>

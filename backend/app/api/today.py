@@ -14,6 +14,7 @@ from app.db.models import (
     NutritionEntry,
     StravaConnection,
     UserProfile,
+    WorkoutCoachFeedback,
     WorkoutEntry,
 )
 from app.db.session import get_db
@@ -52,6 +53,7 @@ from app.services.strava import (
     StravaIntegrationError,
     sync_connection_for_date,
 )
+from app.services.workout_feedback import ensure_workout_feedback
 from app.services.workout_log import (
     WorkoutLogExtractionError,
     analyze_daily_workout_log,
@@ -172,6 +174,11 @@ def get_today(
         "recovery_status": document["profile_snapshot"]["recovery_status"],
         "current_target_goal": profile.current_target_goal if profile else None,
         "rationale": document["rationale"],
+        "coach_feedback": (
+            feedback.message
+            if (feedback := db.scalar(select(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == plan.plan_date)))
+            else None
+        ),
         "nutrition": document["nutrition"],
         "workout": document["workout"],
         "next_action": document["prep_actions"][0] if document["prep_actions"] else None,
@@ -184,6 +191,18 @@ def get_today(
         "actual_workouts": _actual_workouts(db, plan.plan_date),
         "emergency_plate": EMERGENCY_PLATE,
     }
+
+
+@router.post("/workout/coach-feedback")
+def get_or_create_workout_coach_feedback(
+    target_date: date | None = Query(default=None, alias="date"),
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str | None]:
+    target = _recording_date(settings, target_date)
+    feedback = ensure_workout_feedback(db, settings, target)
+    return {"message": feedback.message if feedback else None}
 
 
 @router.get("/details")

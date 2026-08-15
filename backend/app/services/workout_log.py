@@ -16,6 +16,7 @@ from app.schemas.workout_log import (
     WorkoutLogResponse,
 )
 from app.services.metrics import recalculate_derived_summary
+from app.services.workout_feedback import ensure_workout_feedback
 
 WORKOUT_LOG_SYSTEM_PROMPT = """Interpret one free-text workout diary for a single calendar day.
 Extract only exercise that the user says they completed. Never invent an unmentioned activity.
@@ -168,7 +169,6 @@ def process_daily_workout_log(
         if active_extractor
         else f"{settings.openai_workout_log_model}:reviewed"
     )
-
     try:
         db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date).with_for_update())
         workout_log = db.scalar(
@@ -259,6 +259,7 @@ def process_daily_workout_log(
     except Exception:
         db.rollback()
         raise
+    feedback = ensure_workout_feedback(db, settings, target_date, force=True)
 
     return WorkoutLogResponse(
         date=target_date.isoformat(),
@@ -266,6 +267,7 @@ def process_daily_workout_log(
         extraction=extraction,
         skipped_recommendation_ids=sorted(eligible_ids - matched_ids),
         matched_recommendation_ids=sorted(matched_ids),
+        coach_feedback=feedback.message if feedback else "",
     )
 
 

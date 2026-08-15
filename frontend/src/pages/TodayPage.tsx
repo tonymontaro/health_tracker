@@ -319,7 +319,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
         did_no_workout: draft.workouts.length === 0,
         workouts: draft.workouts.map(submittedWorkout),
       };
-      return api(datedPath("/today/workout/log", today.date), {
+      return api<{ coach_feedback: string }>(datedPath("/today/workout/log", today.date), {
         method: "POST",
         body: JSON.stringify({ text, extraction }),
       });
@@ -331,6 +331,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
     },
   });
@@ -342,6 +343,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["strava"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
     },
   });
@@ -610,6 +612,11 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const requestedDate = searchParams.get("date");
   const todayPath = requestedDate ? datedPath("/today", requestedDate) : "/today";
   const today = useQuery({ queryKey: ["today", requestedDate ?? "current"], queryFn: () => api<Today>(todayPath) });
+  const coachFeedback = useQuery({
+    queryKey: ["coach-feedback", today.data?.date],
+    queryFn: () => api<{ message: string | null }>(datedPath("/today/workout/coach-feedback", today.data!.date), { method: "POST" }),
+    enabled: section === "exercise" && today.data !== undefined,
+  });
   if (today.isLoading) return <div className="loading">Building the selected day's plan...</div>;
   if (today.error || !today.data) return <div className="error-panel"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
@@ -633,6 +640,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
           </> : <>
             {!isHistorical && <WorkoutRegenerationCard today={data} />}
+            {(coachFeedback.data?.message ?? data.coach_feedback) && <section className="card coach-feedback"><p className="eyebrow">Coach Forge</p><h3>{coachFeedback.data?.message ?? data.coach_feedback}</h3></section>}
             <WorkoutCard key={`structured-${data.date}`} today={data} onAskAlternative={isHistorical ? undefined : () => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
             <WorkoutLogCard key={`workout-${data.date}`} today={data} />
             {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}

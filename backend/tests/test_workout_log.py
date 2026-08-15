@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.today import local_today
 from app.core.config import Settings, get_settings
 from app.core.security import token_digest
-from app.db.models import ApiToken, DailyWorkoutLog, WorkoutEntry
+from app.db.models import ApiToken, DailyWorkoutLog, WorkoutCoachFeedback, WorkoutEntry
 from app.db.session import get_db
 from app.main import app
 from app.schemas.workout_log import ExtractedWorkout, WorkoutLogExtraction
@@ -134,6 +134,11 @@ def test_workout_log_matches_plan_records_unplanned_and_replaces_atomically(
     )
 
     assert first.matched_recommendation_ids == [matched_id]
+    feedback = db.scalar(
+        select(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == TARGET)
+    )
+    assert feedback is not None
+    assert feedback.message == first.coach_feedback
     db.refresh(planned[0])
     assert planned[0].status == "completed"
     assert planned[0].source == "ai_workout_log"
@@ -166,6 +171,11 @@ def test_workout_log_matches_plan_records_unplanned_and_replaces_atomically(
     )
 
     assert second.matched_recommendation_ids == []
+    refreshed_feedback = db.scalar(
+        select(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == TARGET)
+    )
+    assert refreshed_feedback is not None
+    assert refreshed_feedback.message == second.coach_feedback
     entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET)))
     assert all(entry.planned_recommendation_id is not None for entry in entries)
     assert all(entry.status == "skipped_by_workout_log" for entry in entries)

@@ -76,3 +76,4 @@ class WorkoutLogResponse(BaseModel):
     extraction: WorkoutLogExtraction
     skipped_recommendation_ids: list[str]
     matched_recommendation_ids: list[str]
+    coach_feedback: str

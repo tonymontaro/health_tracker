@@ -26,6 +26,7 @@ from app.services.strava import (
     sync_connection_for_date,
     sync_webhook_activity,
 )
+from app.services.workout_feedback import ensure_workout_feedback
 
 router = APIRouter(prefix="/integrations/strava", tags=["integrations"])
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ def sync_strava(
     auth: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> dict[str, int]:
+) -> dict[str, int | str]:
     connection = _connection(db, auth.account.id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
@@ -150,7 +151,11 @@ def sync_strava_day(
             detail=str(exc),
         ) from exc
     try:
-        return sync_connection_for_date(db, settings, connection, validated_date)
+        result = sync_connection_for_date(db, settings, connection, validated_date)
+        if not result["fetched"]:
+            return {**result, "coach_feedback": ""}
+        feedback = ensure_workout_feedback(db, settings, validated_date, force=True)
+        return {**result, "coach_feedback": feedback.message if feedback else ""}
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

@@ -16,8 +16,6 @@ export function Layout() {
           <NavLink to="/settings">Settings</NavLink>
           <NavLink
             to="https://solve.anthonyngene.com/"
-            target="_blank"
-            rel="noopener noreferrer"
           >
             Study
           </NavLink>
