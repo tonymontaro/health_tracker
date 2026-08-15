@@ -83,6 +83,8 @@ def test_morning_email_includes_emergency_plate_in_both_formats() -> None:
     assert "500 g Skyr / quark" in text
     assert "Emergency protein plate" in html
     assert "500 g Skyr / quark" in html
+    assert "https://health.example.org/today/exercise" in text
+    assert 'href="https://health.example.org/today/exercise"' in html
 
 
 def test_morning_email_contains_every_exercise_and_actionable_meal_details(
@@ -120,6 +122,8 @@ def test_evening_email_includes_emergency_plate_in_both_formats() -> None:
     assert "65 g protein - 3 active minutes" in text
     assert "Emergency protein plate" in html
     assert "65 g protein - 3 active minutes" in html
+    assert "https://health.example.org/today/exercise" in text
+    assert 'href="https://health.example.org/today/exercise"' in html
 
 
 def resend_settings(settings: Settings) -> Settings:

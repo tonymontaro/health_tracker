@@ -332,7 +332,11 @@ Scheduled sync remains the retry path if webhook processing fails.
 
 ## Daily workout recording
 
+Each suggested exercise can be marked Done or Skip directly on the Today page.
+Done records the recommendation unchanged with that exercise's selected difficulty, which defaults to 5 out of 10.
 The Today page offers structured workout completion and an alternate free-text workout diary.
+The diary and selected-day Strava retrieval appear first in the Record drawer.
+Pain is described in the diary text and remains part of the validated extracted record.
 The free-text workflow first sends only the diary text and today's workout suggestions to OpenAI Structured Outputs without changing stored workout data.
 The resulting draft can be corrected, deleted, or extended with manual exercises before a separately validated submission records it.
 Validated results contain typed activities, measurements, difficulty, pain, notes, assumptions, and optional recommendation matches.
@@ -350,7 +354,7 @@ If OpenAI is unavailable or validation fails, no workout state changes.
 - Thursday is rest or very light recovery movement.
 - Every active workout has numeric, reproducible targets.
 - Pain prevents automatic progression.
-- Unresolved expected meals become `assumed_consumed`.
+- Unresolved expected meals become `skipped_assumed`.
 - Unresolved workouts become `skipped_assumed`.
 - Explicit records are never overwritten by reconciliation.
 - Historical corrections recalculate derived summaries without rewriting original plans.

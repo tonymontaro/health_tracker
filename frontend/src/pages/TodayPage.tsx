@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
-import { NavLink, useSearchParams } from "react-router-dom";
+import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
+import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Exercise, ExtractedWorkout, Meal, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
+import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
+import { MealFigure } from "../components/food/MealFigure";
 import { StatusPill } from "../components/StatusPill";
 
 function datedPath(path: string, date: string): string {
@@ -48,8 +50,9 @@ function preparationSteps(preparation: string): string[] {
   return numberedSteps.length > 1 ? numberedSteps : [preparation.trim()].filter(Boolean);
 }
 
-function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Today }) {
+function MealCard({ meal, slot, index, today }: { meal: Meal; slot: string; index: number; today: Today }) {
   const queryClient = useQueryClient();
+  const recipe = useRef<HTMLDialogElement>(null);
   const status = today.nutrition_status[meal.recommendation_id]?.status ?? "planned";
   const foodLogLocked = today.food_log !== null;
   const recipeSteps = preparationSteps(meal.preparation);
@@ -59,19 +62,28 @@ function MealCard({ meal, slot, today }: { meal: Meal; slot: string; today: Toda
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
   });
   return (
-    <section className="card meal-card">
+    <section className="card meal-card story-card">
+      <MealFigure seed={today.date} offset={index - 1} />
       <div className="card-heading"><p className="eyebrow">{foodLogLocked ? `Original suggestion · ${slot}` : slot}</p><StatusPill status={status} /></div>
       <h2>{meal.template_name}</h2>
       <p>{meal.description}</p>
       <div className="meta"><span>{meal.estimated_protein_g} g protein</span><span>{meal.hands_on_minutes} active min</span><span>{meal.suggested_window}</span></div>
-      <details className="recipe-guide">
-        <summary><span>Recipe prep guide</span><span className="recipe-toggle"><span className="recipe-expand">Expand</span><span className="recipe-collapse">Collapse</span></span></summary>
-        <div className="recipe-content">
+      <button className="ink-button" type="button" onClick={() => recipe.current?.showModal()}>Recipe and method <span aria-hidden="true">→</span></button>
+      <dialog className="detail-sheet recipe-sheet" ref={recipe} aria-labelledby={`recipe-${meal.recommendation_id}`}>
+        <form method="dialog"><button className="sheet-close" aria-label={`Close recipe for ${meal.template_name}`}>Close ×</button></form>
+        <p className="eyebrow">{slot} / {meal.suggested_window}</p>
+        <h2 id={`recipe-${meal.recommendation_id}`}>{meal.template_name}</h2>
+        <div className="meta"><span>{meal.estimated_protein_g} g protein</span><span>{meal.hands_on_minutes} active min</span></div>
+        <div className="recipe-content recipe-columns">
+          <div>
           {meal.ingredients.length > 0 && <><h3>Ingredients</h3><ul>{meal.ingredients.map((ingredient, index) => <li key={`${ingredient}-${index}`}>{ingredient}</li>)}</ul></>}
+          </div>
+          <div>
           <h3>Method</h3>
           <ol className="recipe-steps">{recipeSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol>
+          </div>
         </div>
-      </details>
+      </dialog>
       <div className="actions">
         <button className="primary small" disabled={foodLogLocked || action.isPending || status === "confirmed"} onClick={() => action.mutate("confirm")}>Done</button>
         <button className="quiet small" disabled={foodLogLocked || action.isPending} onClick={() => action.mutate("skip")}>Skip</button>
@@ -137,7 +149,7 @@ function FoodLogCard({ today }: { today: Today }) {
     if (text.trim()) save.mutate();
   }
   return (
-    <section className="card food-log-card">
+    <section className="card food-log-card" id="record-food">
       <div className="card-heading"><p className="eyebrow">What I ate</p>{foodLog && <StatusPill status="processed" />}</div>
       <h2>Record the day in your own words</h2>
       <p>Submitting this text treats it as the actual record, discards that day's food suggestions, and uses AI to estimate average portions and nutrients.</p>
@@ -165,6 +177,7 @@ function FoodLogCard({ today }: { today: Today }) {
 function MealRegenerationCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
   const [preference, setPreference] = useState("");
+  const [showPreference, setShowPreference] = useState(false);
   const meals = [today.nutrition.meal_1, today.nutrition.meal_2].filter((meal): meal is Meal => meal !== null);
   const unresolved = meals.every((meal) => (today.nutrition_status[meal.recommendation_id]?.status ?? "planned") === "planned");
   const regenerate = useMutation({
@@ -174,6 +187,7 @@ function MealRegenerationCard({ today }: { today: Today }) {
     }),
     onSuccess: async () => {
       setPreference("");
+      setShowPreference(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
@@ -189,13 +203,23 @@ function MealRegenerationCard({ today }: { today: Today }) {
     event.preventDefault();
     regenerate.mutate();
   }
+  function togglePreference() {
+    if (showPreference) setPreference("");
+    setShowPreference(!showPreference);
+  }
   return (
-    <section className="card meal-regeneration-card">
-      <div><p className="eyebrow">Scheduled meals</p><strong>Want fresh recommendations?</strong><small>Generate different meals: one quick and easy, one more special, while keeping today's workout unchanged.</small>{disabledReason && <small>{disabledReason}</small>}</div>
-      <form className="regeneration-form" onSubmit={submit}>
-        <label>Optional preference<textarea value={preference} maxLength={2000} disabled={regenerate.isPending || disabledReason !== null} onChange={(event) => setPreference(event.target.value)} placeholder="For example: I'd prefer an egg-based or especially high-protein meal today." /></label>
-        <button className="quiet" disabled={regenerate.isPending || disabledReason !== null}>{regenerate.isPending ? "Regenerating..." : "Regenerate meals"}</button>
-      </form>
+    <section className="card compact regeneration-card meal-regeneration-card">
+      <p className="eyebrow">Refresh meals</p>
+      <p className="regeneration-copy">Generate two different recommendations while keeping today's exercise unchanged.</p>
+      {disabledReason && <small className="regeneration-note">{disabledReason}</small>}
+      <div className="regeneration-actions">
+        <button type="button" className="quiet small" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate"}</button>
+        <button type="button" className="text-button" aria-expanded={showPreference} aria-controls={`meal-preference-${today.date}`} disabled={regenerate.isPending || disabledReason !== null} onClick={togglePreference}>{showPreference ? "Hide preference" : "Add preference"}</button>
+      </div>
+      {showPreference && <form className="compact-regeneration-form" id={`meal-preference-${today.date}`} onSubmit={submit}>
+        <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder="For example: egg-based or especially high-protein." /></label>
+        <button className="primary small" disabled={regenerate.isPending}>{regenerate.isPending ? "Regenerating..." : "Regenerate with preference"}</button>
+      </form>}
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
   );
@@ -301,7 +325,7 @@ function WorkoutDraftEditor({
         <label>Matched recommendation<select value={workout.matched_recommendation_id ?? ""} onChange={(event) => onChange({ matched_recommendation_id: event.target.value || null, match_confidence: event.target.value ? 1 : 0 })}><option value="">Unplanned exercise</option>{recommendations.map((exercise) => <option key={exercise.recommendation_id} value={exercise.recommendation_id}>{exercise.exercise_name}</option>)}</select></label>
       </div>
       <label>Notes<textarea maxLength={2000} value={workout.notes ?? ""} onChange={(event) => onChange({ notes: event.target.value || null })} /></label>
-      <label className="checkbox"><input type="checkbox" checked={workout.pain_flag} onChange={(event) => onChange({ pain_flag: event.target.checked })} /> Pain occurred</label>
+      {workout.pain_flag && <p className="assumption-note">Pain or discomfort was detected in your description and will be included in the record.</p>}
     </article>
   );
 }
@@ -389,10 +413,10 @@ function WorkoutLogCard({ today }: { today: Today }) {
   }
   const reviewError = workoutDraftError(draft);
   return (
-    <section className="card workout-log-card">
+    <section className="card workout-log-card" id="record-workout">
       <div className="card-heading"><div><p className="eyebrow">What I trained</p>{workoutLog && <StatusPill status="processed" />}</div><button type="button" className="quiet small" disabled={retrieveStrava.isPending} onClick={() => { setStravaMessage(""); retrieveStrava.mutate(); }}>{retrieveStrava.isPending ? "Retrieving..." : "Retrieve from Strava"}</button></div>
       <h2>Describe the workout in your own words</h2>
-      <p>Analyze your description, review every extracted exercise, make any corrections, and submit only when the record is accurate.</p>
+      <p>Describe what you did, including any pain or discomfort. Then review every extracted exercise and submit only when the record is accurate.</p>
       <form onSubmit={submitAnalysis}>
         <label>Workout details<textarea value={text} maxLength={5000} onChange={(event) => setText(event.target.value)} placeholder="Ran 6.2 km in 38 minutes, then did 3 sets of 8 pull-ups. Difficulty 6/10 and no pain." /></label>
         <div className="food-log-submit"><small>Analysis does not record anything. Existing Strava evidence is preserved.</small><button className="primary" disabled={analyze.isPending || !text.trim()}>{analyze.isPending ? "Analyzing..." : "Analyze"}</button></div>
@@ -428,6 +452,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
 function WorkoutRegenerationCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
   const [preference, setPreference] = useState("");
+  const [showPreference, setShowPreference] = useState(false);
   const unresolved = today.workout.exercises.every((exercise) => (today.workout_status[exercise.recommendation_id]?.status ?? "planned") === "planned");
   const hasRecordedExercise = today.actual_workouts.some((entry) => entry.status === "completed" || entry.actual);
   const regenerate = useMutation({
@@ -437,6 +462,7 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
     }),
     onSuccess: async () => {
       setPreference("");
+      setShowPreference(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
@@ -456,22 +482,39 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
     event.preventDefault();
     regenerate.mutate();
   }
+  function togglePreference() {
+    if (showPreference) setPreference("");
+    setShowPreference(!showPreference);
+  }
   return (
-    <section className="card workout-regeneration-card">
-      <div><p className="eyebrow">Refresh today's recommendation</p><strong>Use the latest activity history</strong><small>When Strava is connected, yesterday is retrieved first. The planner then rebuilds only today's exercise recommendation from the refreshed 28-day history.</small>{disabledReason && <small>{disabledReason}</small>}</div>
-      <form className="regeneration-form" onSubmit={submit}>
-        <label>Optional preference<textarea value={preference} maxLength={2000} disabled={regenerate.isPending || disabledReason !== null} onChange={(event) => setPreference(event.target.value)} placeholder="For example: I'd prefer an upper-body session or an easy run today." /></label>
-        <button className="quiet" disabled={regenerate.isPending || disabledReason !== null}>{regenerate.isPending ? "Regenerating..." : "Regenerate exercise"}</button>
-      </form>
+    <section className="card compact regeneration-card workout-regeneration-card">
+      <p className="eyebrow">Refresh exercise</p>
+      <p className="regeneration-copy">Retrieve the latest Strava history and rebuild only today's recommendation.</p>
+      {disabledReason && <small className="regeneration-note">{disabledReason}</small>}
+      <div className="regeneration-actions">
+        <button type="button" className="quiet small" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate"}</button>
+        <button type="button" className="text-button" aria-expanded={showPreference} aria-controls={`workout-preference-${today.date}`} disabled={regenerate.isPending || disabledReason !== null} onClick={togglePreference}>{showPreference ? "Hide preference" : "Add preference"}</button>
+      </div>
+      {showPreference && <form className="compact-regeneration-form" id={`workout-preference-${today.date}`} onSubmit={submit}>
+        <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder="For example: upper body or an easy run." /></label>
+        <button className="primary small" disabled={regenerate.isPending}>{regenerate.isPending ? "Regenerating..." : "Regenerate with preference"}</button>
+      </form>}
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
   );
 }
 
-function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternative?: () => void }) {
+function WorkoutCard({
+  today,
+  mode = "summary",
+  onAskAlternative,
+}: {
+  today: Today;
+  mode?: "summary" | "record";
+  onAskAlternative?: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [difficulty, setDifficulty] = useState(5);
-  const [pain, setPain] = useState(false);
+  const [difficulties, setDifficulties] = useState<Record<string, number>>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const workoutLogLocked = today.workout_log !== null;
@@ -489,64 +532,105 @@ function WorkoutCard({ today, onAskAlternative }: { today: Today; onAskAlternati
         } else if (exercise.exercise_type === "run") {
           results[exercise.recommendation_id] = {
             distance_km: Number(first || exercise.distance_km),
-            duration_seconds: Math.round(Number(second) * 60),
+            duration_seconds: Math.round(Number(second || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60),
           };
         } else {
           results[exercise.recommendation_id] = {
-            duration_seconds: Math.round(Number(first) * 60),
+            duration_seconds: Math.round(Number(first || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60),
             average_power_watts: second ? Number(second) : null,
           };
         }
       }
       return api(datedPath("/today/workout/complete", today.date), {
         method: "POST",
-        body: JSON.stringify({ results, difficulty_1_to_10: difficulty, pain_flag: pain, notes: notes || null }),
+        body: JSON.stringify({ results, difficulty_1_to_10: 5, pain_flag: false, notes: notes || null }),
       });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
   });
-  const skip = useMutation({
-    mutationFn: () => api(datedPath("/today/workout/skip", today.date), { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today"] }),
+  const recommendationAction = useMutation({
+    mutationFn: ({ recommendationId, kind, difficulty }: { recommendationId: string; kind: "confirm" | "skip"; difficulty: number }) =>
+      api(datedPath(`/today/workout/${recommendationId}/${kind}`, today.date), {
+        method: "POST",
+        ...(kind === "confirm" ? { body: JSON.stringify({ difficulty_1_to_10: difficulty }) } : {}),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
   });
   if (today.workout.kind === "rest") {
     return <section className="card workout-card"><p className="eyebrow">Training</p><h2>Rest</h2><p>{today.workout.summary}</p></section>;
   }
+  const isRecording = mode === "record";
   return (
-    <section className="card workout-card">
-      <div className="card-heading"><p className="eyebrow">Training</p><span className="difficulty">Expected {today.workout.exercises[0]?.expected_difficulty}/10</span></div>
-      <h2>{today.workout.title}</h2>
+    <section className={`card workout-card workout-card-${mode}`}>
+      <div className="card-heading"><p className="eyebrow">{isRecording ? "Changed workout" : "The prescription"}</p><span className="difficulty">{today.workout.exercises.length} {today.workout.exercises.length === 1 ? "exercise" : "exercises"}</span></div>
+      {isRecording && <><h2>Record changes to the plan</h2><p>Use these fields only when the completed workout differed from the recommendation.</p></>}
       {today.workout.exercises.map((exercise) => {
         const status = today.workout_status[exercise.recommendation_id]?.status ?? "planned";
         const recorded = today.workout_status[exercise.recommendation_id];
         const strength = exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight";
         const hasEvaluation = recorded && (recorded.difficulty_1_to_10 != null || recorded.pain_flag);
+        const selectedDifficulty = difficulties[exercise.recommendation_id] ?? recorded?.difficulty_1_to_10 ?? 5;
+        const difficultyProgress = `${((selectedDifficulty - 1) / 9) * 100}%`;
+        const skipped = status === "skipped" || status === "skipped_assumed" || status === "skipped_by_workout_log";
         return (
           <div className="exercise" key={exercise.recommendation_id}>
-            <div><strong>{exercise.exercise_name}</strong> <StatusPill status={status} /></div>
+            <div className="exercise-heading"><div><strong>{exercise.exercise_name}</strong> <StatusPill status={status} /></div><span className="difficulty">Planned effort {exercise.expected_difficulty}/10</span></div>
             <p className="prescription">{exerciseText(exercise)}</p><p>{exercise.instructions}</p>
-            {recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
-            {hasEvaluation && <div className="meta recorded-evaluation">{recorded.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {recorded.difficulty_1_to_10}/10</span>}{recorded.pain_flag && <span>Pain recorded</span>}</div>}
-            {recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
-            <div className="actual-grid">
+            {isRecording && recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
+            {isRecording && hasEvaluation && <div className="meta recorded-evaluation">{recorded.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {recorded.difficulty_1_to_10}/10</span>}{recorded.pain_flag && <span>Pain recorded</span>}</div>}
+            {isRecording && recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
+            {isRecording && <div className="actual-grid">
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
               <label>{strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
-            </div>
+            </div>}
+            {!isRecording && <div className="exercise-checkin">
+              <label className="exercise-difficulty-control" htmlFor={`difficulty-${exercise.recommendation_id}`}>
+                <span><b>How hard was it?</b><output htmlFor={`difficulty-${exercise.recommendation_id}`}>{selectedDifficulty}<small>/10</small></output></span>
+                <input
+                  id={`difficulty-${exercise.recommendation_id}`}
+                  aria-label={`Difficulty for ${exercise.exercise_name}`}
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={selectedDifficulty}
+                  style={{ "--difficulty-progress": difficultyProgress } as CSSProperties}
+                  disabled={workoutLogLocked || recommendationAction.isPending || status === "completed"}
+                  onChange={(event) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: Number(event.target.value) })}
+                />
+                <span className="difficulty-scale" aria-hidden="true"><i>Easy</i><i>Hard</i></span>
+              </label>
+              <div className="exercise-action-buttons">
+                <button type="button" className="primary small" disabled={workoutLogLocked || recommendationAction.isPending || status === "completed"} onClick={() => recommendationAction.mutate({ recommendationId: exercise.recommendation_id, kind: "confirm", difficulty: selectedDifficulty })}>Done</button>
+                <button type="button" className="quiet small" disabled={workoutLogLocked || recommendationAction.isPending || skipped} onClick={() => recommendationAction.mutate({ recommendationId: exercise.recommendation_id, kind: "skip", difficulty: selectedDifficulty })}>Skip</button>
+              </div>
+            </div>}
           </div>
         );
       })}
-      <div className="completion-row">
-        <label>Difficulty <strong>{difficulty}/10</strong><input type="range" min="1" max="10" value={difficulty} onChange={(event) => setDifficulty(Number(event.target.value))} /></label>
-        <label className="checkbox"><input type="checkbox" checked={pain} onChange={(event) => setPain(event.target.checked)} /> Pain occurred</label>
-      </div>
-      <label>Notes, optional<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+      {isRecording && <><label>Notes, optional<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
       <div className="actions">
-        <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending || workoutLogLocked}>Save completion</button>
-        <button className="quiet small" onClick={() => skip.mutate()} disabled={skip.isPending || workoutLogLocked}>Skip workout</button>
-        {onAskAlternative && <button className="quiet small" onClick={onAskAlternative}>Ask for an alternative</button>}
+        <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending || workoutLogLocked}>Save changed workout</button>
       </div>
       {workoutLogLocked && <p className="locked-note">Structured actions are locked because this day's workout text is the actual record.</p>}
-      {(complete.error || skip.error) && <p className="error">{complete.error?.message ?? skip.error?.message}</p>}
+      {complete.error && <p className="error">{complete.error.message}</p>}</>}
+      {!isRecording && workoutLogLocked && <p className="locked-note">Actions are locked because this day's workout text is the actual record.</p>}
+      {!isRecording && recommendationAction.error && <p className="error">{recommendationAction.error.message}</p>}
+      {!isRecording && onAskAlternative && <button className="ink-button" type="button" onClick={onAskAlternative}>Ask for an alternative <span aria-hidden="true">→</span></button>}
     </section>
   );
 }
@@ -610,8 +694,8 @@ function ChatPanel({
   }
   return (
     <section className="card chat-card">
-      {canAsk && <><p className="eyebrow">Ask about today's plan</p><form onSubmit={submit}><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Why this pace? Can I use the KICKR instead?" /><button className="primary small" disabled={ask.isPending || !question.trim()}>{ask.isPending ? "Asking..." : "Ask AI"}</button></form></>}
-      <div className="chat-feed-heading"><div><p className="eyebrow">Chats</p><h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2></div><small>Newest first</small></div>
+      {canAsk && <><p className="eyebrow">Ask about today's plan</p><form onSubmit={submit}><label htmlFor={`coach-question-${selectedDate}`}>Message your AI coach</label><div className="chat-composer"><textarea id={`coach-question-${selectedDate}`} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Why this pace? Can I use the KICKR instead?" /><button className="primary small" disabled={ask.isPending || !question.trim()}>{ask.isPending ? "Asking..." : "Ask AI"}</button></div></form></>}
+      <div className="chat-feed-heading"><p className="eyebrow">Chats</p><small>Newest first</small></div>
       {messages.isLoading && <p>Loading saved chats...</p>}
       {messages.error && <p className="error">{messages.error.message}</p>}
       {messages.data?.length === 0 && <p>No saved conversations for this day.</p>}
@@ -630,8 +714,101 @@ function ChatPanel({
   );
 }
 
+function sourceLabel(source: Today["source"]): string {
+  return source === "openai" ? "AI planned" : "Reliable fallback";
+}
+
+function CoachFeedbackNote({ feedback, loading }: { feedback: string | null; loading: boolean }) {
+  return <aside className="coach-feedback-top" aria-live="polite">
+    <p className="eyebrow">Coach's feedback</p>
+    <p>{feedback || (loading ? "Reviewing today's plan..." : "No additional coaching note for this day.")}</p>
+    <span aria-hidden="true">01</span>
+  </aside>;
+}
+
+function TodayEditionHeader({ today, section }: { today: Today; section: "food" | "exercise" }) {
+  const date = new Date(`${today.date}T12:00:00`);
+  const dateLong = date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const dateShort = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const monthYear = date.toLocaleDateString(undefined, { month: "short", year: "numeric" }).split(" ");
+  const isFood = section === "food";
+  return <header className={`edition-header ${isFood ? "edition-header-food" : "edition-header-exercise"}`}>
+    <div className="edition-meta"><span>Daily edition</span><span>Europe / Zurich</span><time className="date-long" dateTime={today.date}>{dateLong}</time><time className="date-short" dateTime={today.date}>{dateShort}</time></div>
+    {isFood && <div className="edition-title food-edition-title">
+      <div className="date-block"><strong>{String(date.getDate()).padStart(2, "0")}</strong><span>{monthYear[0]}<br />{monthYear[1]}</span></div>
+      <div className="food-brief">
+        <p className="eyebrow">Today's food</p>
+        <h1>{today.nutrition.guidance}</h1>
+        <div className="edition-brief-facts"><span>{today.nutrition.expected_main_meals} {today.nutrition.expected_main_meals === 1 ? "meal" : "meals"}</span><span>Approx. {today.nutrition.approximate_protein_g} g protein</span><span>{today.recovery_status.replaceAll("_", " ")} recovery</span></div>
+      </div>
+      <div className={`source-stamp source-${today.source}`}><span>Source</span><strong>{sourceLabel(today.source)}</strong></div>
+    </div>}
+  </header>;
+}
+
+function ExerciseLead({ today }: { today: Today }) {
+  return <section className="lead-story">
+    <div className="lead-copy">
+      <p className="eyebrow"><span>I</span> The main work</p>
+      <h1>{today.workout.title}</h1>
+      <p className="dropcap">{today.rationale.summary || today.workout.summary}</p>
+      {today.current_target_goal && <div className="target-note"><span>Current target</span><strong>{today.current_target_goal}</strong></div>}
+    </div>
+    <ExerciseFigure today={today} />
+  </section>;
+}
+
+type RecordKind = "exercise" | "food";
+
+function RecordSheet({
+  today,
+  kind,
+  onKindChange,
+  onClose,
+}: {
+  today: Today;
+  kind: RecordKind | null;
+  onKindChange: (kind: RecordKind) => void;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const recordDialog = dialog.current;
+    if (kind) {
+      if (!recordDialog?.open) recordDialog?.showModal();
+      const frame = requestAnimationFrame(() => recordDialog?.scrollTo({ top: 0 }));
+      return () => cancelAnimationFrame(frame);
+    }
+    if (recordDialog?.open) recordDialog.close();
+  }, [kind]);
+  const stravaActivities = today.actual_workouts.filter((entry) => entry.source === "strava");
+  return <dialog className="detail-sheet record-sheet" ref={dialog} aria-labelledby="record-sheet-title" onClose={onClose}>
+    <form method="dialog"><button className="sheet-close">Close ×</button></form>
+    <p className="eyebrow">Record the day / {today.date}</p>
+    <h2 id="record-sheet-title">What should the record say?</h2>
+    <p className="record-sheet-intro">Choose a section and describe the day in your own words. The structured fields remain available for precise changes.</p>
+    <div className="record-tabs" aria-label="Record type">
+      <button type="button" aria-pressed={kind === "exercise"} className={kind === "exercise" ? "active" : ""} onClick={() => onKindChange("exercise")}>Exercise</button>
+      <button type="button" aria-pressed={kind === "food"} className={kind === "food" ? "active" : ""} onClick={() => onKindChange("food")}>Food</button>
+    </div>
+    <div className="record-panel" hidden={kind !== "exercise"}>
+      <WorkoutLogCard key={`workout-record-${today.date}`} today={today} />
+      {stravaActivities.length > 0 && <section className="card"><p className="eyebrow">Strava activities</p>{stravaActivities.map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
+      {today.workout.kind !== "rest" && <WorkoutCard today={today} mode="record" />}
+    </div>
+    <div className="record-panel" hidden={kind !== "food"}>
+      <FoodLogCard key={`food-record-${today.date}`} today={today} />
+    </div>
+  </dialog>;
+}
+
+function FolioRule({ label, number }: { label: string; number: string }) {
+  return <div className="folio-rule" aria-hidden="true"><span>{label}</span><i /><b>{number}</b></div>;
+}
+
 export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedDate = searchParams.get("date");
   const todayPath = requestedDate ? datedPath("/today", requestedDate) : "/today";
@@ -639,48 +816,64 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const coachFeedback = useQuery({
     queryKey: ["coach-feedback", today.data?.date],
     queryFn: () => api<{ message: string | null }>(datedPath("/today/workout/coach-feedback", today.data!.date), { method: "POST" }),
-    enabled: section === "exercise" && today.data !== undefined,
+    enabled: today.data !== undefined,
   });
-  if (today.isLoading) return <div className="loading">Building the selected day's plan...</div>;
-  if (today.error || !today.data) return <div className="error-panel"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
+  useEffect(() => {
+    if (!today.data || !location.hash) return;
+    const frame = requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, [location.hash, today.data]);
+  if (today.isLoading) return <div className="loading" role="status">Building the selected day's plan...</div>;
+  if (today.error || !today.data) return <div className="error-panel" role="alert"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
   const isFood = section === "food";
   const currentDate = data.recording_dates[0] ?? data.date;
   const isHistorical = data.date !== currentDate;
   const tabSearch = isHistorical ? `?date=${encodeURIComponent(data.date)}` : "";
+  const feedback = coachFeedback.data?.message ?? data.coach_feedback;
+  const recordValue = searchParams.get("record");
+  const recordKind: RecordKind | null = recordValue === "exercise" || recordValue === "food" ? recordValue : null;
+  function setRecordKind(kind: RecordKind | null) {
+    const next = new URLSearchParams(searchParams);
+    if (kind) next.set("record", kind);
+    else next.delete("record");
+    setSearchParams(next, { replace: true });
+  }
   return (
-    <>
-      <header className="page-header"><div><p className="eyebrow">{new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1>{isFood ? "Food & nutrition" : "Exercise"}</h1></div><div className="page-header-actions"><label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label><span className={`source source-${data.source}`}>{data.source === "openai" ? "AI planned" : "Reliable fallback"}</span></div></header>
+    <div className={`field-notes-edition today-${section}`}>
+      <CoachFeedbackNote feedback={feedback} loading={coachFeedback.isLoading} />
+      <TodayEditionHeader today={data} section={section} />
+      <div className="edition-tools">
       <nav className="page-tabs" aria-label="Today's plan sections">
-        <NavLink to={`/today/food${tabSearch}`}>Food & nutrition</NavLink>
         <NavLink to={`/today/exercise${tabSearch}`}>Exercise</NavLink>
+        <NavLink to={`/today/food${tabSearch}`}>Food</NavLink>
       </nav>
+        <label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label>
+      </div>
+      {!isFood && <ExerciseLead today={data} />}
+      <FolioRule label={isFood ? "Today's table" : "Session detail"} number="02" />
       <div className="today-grid">
         <div className="main-column">
           {isFood ? <>
-            <FoodLogCard key={`food-${data.date}`} today={data} />
-            {!isHistorical && <MealRegenerationCard today={data} />}
-            <MealCard meal={data.nutrition.meal_1} slot="Meal 1" today={data} />
-            {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" today={data} />}
+            <MealCard meal={data.nutrition.meal_1} slot="Meal 1" index={1} today={data} />
+            {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" index={2} today={data} />}
           </> : <>
-            {!isHistorical && <WorkoutRegenerationCard today={data} />}
-            {(coachFeedback.data?.message ?? data.coach_feedback) && <section className="card coach-feedback"><p className="eyebrow">Coach Forge</p><h3>{coachFeedback.data?.message ?? data.coach_feedback}</h3></section>}
             <WorkoutCard key={`structured-${data.date}`} today={data} onAskAlternative={isHistorical ? undefined : () => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
-            <WorkoutLogCard key={`workout-${data.date}`} today={data} />
-            {data.actual_workouts.filter((entry) => entry.source === "strava").length > 0 && <section className="card"><p className="eyebrow">Other Strava activities</p>{data.actual_workouts.filter((entry) => entry.source === "strava").map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
           </>}
         </div>
         <aside className="side-column">
           {isFood ? <>
+            {!isHistorical && <MealRegenerationCard today={data} />}
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original fruit suggestions" : "Fruit"}</p>{data.nutrition.fruits.map((fruit) => <div className="list-item" key={fruit.recommendation_id}><strong>{fruit.name} · {fruit.quantity} <StatusPill status={data.nutrition_status[fruit.recommendation_id]?.status ?? "planned"} /></strong><NutritionSuggestionActions recommendationId={fruit.recommendation_id} today={data} /></div>)}</section>
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small><NutritionSuggestionActions recommendationId={snack.recommendation_id} today={data} /></div>)}</section>
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
-          </> : <><section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section><section className="card compact"><p className="eyebrow">Training recommendation</p><h3>{data.workout.title}</h3><p>{data.workout.summary}</p><div className="meta"><span>{data.workout.intensity.replaceAll("_", " ")}</span><span>{data.workout.expected_duration_minutes} min</span></div></section></>}
+          </> : <>{!isHistorical && <WorkoutRegenerationCard today={data} />}<section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section></>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
           {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
         </aside>
       </div>
       <ChatPanel key={`${data.date}-${alternativeQuestion}`} initialQuestion={alternativeQuestion} canAsk={!isHistorical} selectedDate={data.date} />
-    </>
+      <RecordSheet today={data} kind={recordKind} onKindChange={(kind) => setRecordKind(kind)} onClose={() => setRecordKind(null)} />
+    </div>
   );
 }

@@ -17,16 +17,16 @@ from app.services.shopping import STANDARD_ITEMS, generate_weekly_shopping_plan
 TARGET = date(2026, 8, 10)
 
 
-def test_reconciliation_assumes_main_meals_and_skips_workouts(
+def test_reconciliation_assumes_main_meals_and_workouts_were_skipped(
     db: Session, settings: Settings, seeded
 ) -> None:
     generate_daily_plan(db, settings, TARGET, use_ai=False)
     result = reconcile_day(db, TARGET)
     meals = list(db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == TARGET)))
     workouts = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET)))
-    assert result["assumed_meals"] == 2
+    assert result["assumed_skipped_meals"] == 2
     assert all(
-        item.status == "assumed_consumed" for item in meals if item.meal_slot.startswith("meal")
+        item.status == "skipped_assumed" for item in meals if item.meal_slot.startswith("meal")
     )
     assert all(item.status == "planned" for item in meals if item.meal_slot in {"fruit", "snack"})
     assert all(item.status == "skipped_assumed" for item in workouts)

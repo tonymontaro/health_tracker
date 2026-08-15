@@ -62,11 +62,29 @@ export function App() {
   }
 
   if (!configured) {
-    return <main><header><span className="mark">HA</span><div><small>SETUP</small><h1>Connect your autopilot</h1></div></header><label>API URL<input value={settings.apiUrl} onChange={(event) => setSettings({ ...settings, apiUrl: event.target.value.replace(/\/$/, "") })} /></label><label>Web app URL<input value={settings.appUrl} onChange={(event) => setSettings({ ...settings, appUrl: event.target.value.replace(/\/$/, "") })} /></label><label>Extension token<input type="password" value={settings.token} onChange={(event) => setSettings({ ...settings, token: event.target.value })} /></label><button className="primary" onClick={() => void save()}>Save and connect</button>{error && <p className="error">{error}</p>}</main>;
+    return <main className="setup-edition">
+      <header><span className="mark">HA</span><div><small>Personal field notes / Setup</small><h1>Connect your<br /><em>autopilot.</em></h1></div></header>
+      <p className="standfirst">Use the URLs and revocable token from the full app's Settings page.</p>
+      <label>API URL<input value={settings.apiUrl} onChange={(event) => setSettings({ ...settings, apiUrl: event.target.value.replace(/\/$/, "") })} /></label>
+      <label>Web app URL<input value={settings.appUrl} onChange={(event) => setSettings({ ...settings, appUrl: event.target.value.replace(/\/$/, "") })} /></label>
+      <label>Extension token<input type="password" value={settings.token} onChange={(event) => setSettings({ ...settings, token: event.target.value })} /></label>
+      <button className="primary full" onClick={() => void save()}>Save and connect <span aria-hidden="true">→</span></button>
+      {error && <p className="error" role="alert">{error}</p>}
+    </main>;
   }
-  if (!today) return <main><p>{error || "Loading today's plan..."}</p><button onClick={() => setConfigured(false)}>Settings</button></main>;
+  if (!today) return <main className="loading-edition"><p role="status">{error || "Loading today's field notes..."}</p><button onClick={() => setConfigured(false)}>Settings</button></main>;
   const exercises = today.workout.exercises;
-  return <main><header><span className="mark">HA</span><div><small>CURRENT STATUS</small><h1>Today</h1></div><button className="icon" onClick={() => setConfigured(false)}>•••</button></header><section className="status-card"><p>{today.current_status}</p></section><section><small>MEALS</small><div className="row"><div><strong>{today.nutrition.meal_1.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_1.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_1)}>Done</button></div>{today.nutrition.meal_2 && <div className="row"><div><strong>{today.nutrition.meal_2.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_2.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_2!)}>Done</button></div>}</section><section><small>FRUIT</small><p>{today.nutrition.fruits.map((item) => item.name).join(" · ")}</p></section><section className="training"><small>TRAINING</small><strong>{today.workout.kind === "rest" ? "Rest" : today.workout.title}</strong>{exercises.map((item) => <p key={item.recommendation_id}>{item.exercise_name}<br /><span>{exerciseLine(item)}</span></p>)}</section><section className="next"><small>NEXT ACTION</small><strong>{today.next_action?.action ?? "Nothing needed"}</strong></section>{today.shopping.action_needed && <p className="warning">Shopping: {today.shopping.summary}</p>}<button className="primary full" onClick={() => chrome.tabs.create({ url: `${settings.appUrl}/today` })}>Open full app</button>{error && <p className="error">{error}</p>}</main>;
+  return <main className="today-edition">
+    <header><span className="mark">HA</span><div><small>Personal field notes / Today</small><h1>Daily notes</h1></div><button className="icon" aria-label="Open extension settings" onClick={() => setConfigured(false)}>•••</button></header>
+    <section className="status-card"><small>Current status</small><p>{today.current_status}</p></section>
+    <section className="training"><small>Exercise first</small><strong>{today.workout.kind === "rest" ? "Rest" : today.workout.title}</strong>{exercises.map((item) => <p key={item.recommendation_id}>{item.exercise_name}<br /><span>{exerciseLine(item)}</span></p>)}</section>
+    <section><small>Food</small><div className="row"><div><strong>{today.nutrition.meal_1.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_1.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_1)}>Done</button></div>{today.nutrition.meal_2 && <div className="row"><div><strong>{today.nutrition.meal_2.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_2.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_2!)}>Done</button></div>}</section>
+    <section><small>Fruit</small><p>{today.nutrition.fruits.map((item) => item.name).join(" · ")}</p></section>
+    <section className="next"><small>Next action</small><strong>{today.next_action?.action ?? "Nothing needed"}</strong></section>
+    {today.shopping.action_needed && <p className="warning">Shopping: {today.shopping.summary}</p>}
+    <button className="primary full" onClick={() => chrome.tabs.create({ url: `${settings.appUrl}/today/exercise` })}>Open full app <span aria-hidden="true">→</span></button>
+    {error && <p className="error" role="alert">{error}</p>}
+  </main>;
 }
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);

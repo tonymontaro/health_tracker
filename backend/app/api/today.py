@@ -23,6 +23,7 @@ from app.schemas.api import (
     RegenerationRequest,
     ReplaceRecommendationRequest,
     WorkoutCompletionRequest,
+    WorkoutRecommendationCompletionRequest,
 )
 from app.schemas.food_log import FoodLogRequest, FoodLogResponse
 from app.schemas.workout_log import (
@@ -247,6 +248,18 @@ def _nutrition_entry(db: Session, recommendation_id: str, target: date) -> Nutri
     return entry
 
 
+def _workout_entry(db: Session, recommendation_id: str, target: date) -> WorkoutEntry:
+    entry = db.scalar(
+        select(WorkoutEntry).where(
+            WorkoutEntry.entry_date == target,
+            WorkoutEntry.planned_recommendation_id == recommendation_id,
+        )
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Workout recommendation not found")
+    return entry
+
+
 @router.post("/nutrition/{recommendation_id}/confirm")
 def confirm_nutrition(
     recommendation_id: str,
@@ -412,6 +425,55 @@ def complete_workout(
         recalculate_derived_summary(db, profile, target)
     db.commit()
     return [serialize_workout(item) for item in changed]
+
+
+@router.post("/workout/{recommendation_id}/confirm")
+def confirm_workout_recommendation(
+    recommendation_id: str,
+    payload: WorkoutRecommendationCompletionRequest,
+    target_date: date | None = Query(default=None, alias="date"),
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    target = _recording_date(settings, target_date)
+    _reject_if_workout_log_exists(db, target)
+    entry = _workout_entry(db, recommendation_id, target)
+    entry.actual_json = dict(entry.prescription_json)
+    entry.difficulty_1_to_10 = payload.difficulty_1_to_10
+    entry.pain_flag = False
+    entry.notes = None
+    entry.status = "completed"
+    entry.source = "recommended"
+    profile = db.scalar(select(UserProfile))
+    if profile:
+        recalculate_derived_summary(db, profile, target)
+    db.commit()
+    return serialize_workout(entry)
+
+
+@router.post("/workout/{recommendation_id}/skip")
+def skip_workout_recommendation(
+    recommendation_id: str,
+    target_date: date | None = Query(default=None, alias="date"),
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    target = _recording_date(settings, target_date)
+    _reject_if_workout_log_exists(db, target)
+    entry = _workout_entry(db, recommendation_id, target)
+    entry.actual_json = None
+    entry.difficulty_1_to_10 = None
+    entry.pain_flag = False
+    entry.notes = None
+    entry.status = "skipped"
+    entry.source = "recommended"
+    profile = db.scalar(select(UserProfile))
+    if profile:
+        recalculate_derived_summary(db, profile, target)
+    db.commit()
+    return serialize_workout(entry)
 
 
 @router.post("/workout/skip")

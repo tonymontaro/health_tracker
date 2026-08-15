@@ -243,8 +243,7 @@ def emergency_plate_html() -> str:
         for item in EMERGENCY_PLATE["ingredients"]
     )
     return (
-        '<div style="border:1px solid #d9ddd5;border-radius:12px;padding:14px;'
-        'background:#f2f4ee">'
+        '<div style="border:1px solid #b44832;padding:14px;background:#eee0d3">'
         f"<strong>{escape(str(EMERGENCY_PLATE['name']))}</strong>"
         f"<p>{escape(str(EMERGENCY_PLATE['description']))}</p>"
         f"<p>{ingredients}</p>"
@@ -319,19 +318,24 @@ Next action
 Shopping
 {shopping}
 
-Open today's plan: {app_url}/today
+Open today's exercise: {app_url}/today/exercise
 """
-    html = f"""<html><body style="font-family:system-ui;line-height:1.5;color:#17332d">
-<h2>Coach Forge</h2><p><strong>{escape(coach_note or "The plan is set. Execute it.")}</strong></p>
-<h2>Today</h2><p>{escape(plan["profile_snapshot"]["short_summary"])}</p>
-<h2>Meals</h2>{"".join(meal_html_sections)}
+    html = f"""<html><body style="margin:0;background:#f2eee2;color:#25251f;font-family:Georgia,'Times New Roman',serif;line-height:1.55">
+<div style="max-width:720px;margin:0 auto;padding:28px 24px 48px">
+<div style="border-bottom:1px solid #25251f;padding-bottom:14px"><span style="display:inline-block;width:34px;height:34px;border:1px solid #25251f;border-radius:50%;font:700 11px/34px Arial,sans-serif;text-align:center">HA</span><span style="margin-left:10px;font-size:15px">Health Autopilot</span></div>
+<p style="margin:28px 0 8px;color:#6e6d64;font:700 11px Arial,sans-serif;letter-spacing:1.4px;text-transform:uppercase">Personal field notes / Morning</p>
+<h1 style="margin:0 0 20px;font-size:48px;font-weight:400;line-height:.96;letter-spacing:-2px">Today's plan.<br><em style="color:#b44832;font-weight:400">Exercise first.</em></h1>
+<div style="border-top:1px solid #25251f;border-bottom:1px solid #aaa79d;padding:18px 0"><h2 style="margin:0 0 8px;font-size:28px;font-weight:400">Coach Forge</h2><p><strong>{escape(coach_note or "The plan is set. Execute it.")}</strong></p><p>{escape(plan["profile_snapshot"]["short_summary"])}</p></div>
+<h2 style="margin-top:30px;font-size:30px;font-weight:400">Training</h2>{workout_html(plan["workout"])}
+<h2 style="margin-top:30px;font-size:30px;font-weight:400">Meals</h2>{"".join(meal_html_sections)}
 <h3>Fruit options</h3>{f"<ul>{fruit_html}</ul>" if fruit_html else "<p>None planned</p>"}
 <h3>Optional protein</h3>{f"<ul>{optional_html}</ul>" if optional_html else "<p>None planned</p>"}
 {f"<h3>Meal guidance</h3><p>{escape(str(guidance))}</p>" if guidance else ""}
 <h3>Emergency option</h3>{emergency_plate_html()}
-<h2>Training</h2>{workout_html(plan["workout"])}
-<h3>Next action</h3><p>{escape(prep)}</p><h3>Shopping</h3><p>{escape(shopping)}</p>
-<p><a href="{escape(app_url)}/today">Open today's plan</a></p></body></html>"""
+<div style="margin-top:28px;padding:18px;background:#b44832;color:#f2eee2"><p style="margin-top:0;font:700 11px Arial,sans-serif;letter-spacing:1.2px;text-transform:uppercase">Next action</p><p>{escape(prep)}</p></div>
+<h3>Shopping</h3><p>{escape(shopping)}</p>
+<p style="margin-top:30px"><a style="display:inline-block;border:1px solid #25251f;padding:12px 16px;background:#25251f;color:#f2eee2;font:700 11px Arial,sans-serif;letter-spacing:1px;text-decoration:none;text-transform:uppercase" href="{escape(app_url)}/today/exercise">Open today's exercise →</a></p>
+</div></body></html>"""
     return "Today - meals, training and next action", text, html
 
 
@@ -353,12 +357,17 @@ Emergency option
 If anything differed, record it now.
 Please also enter the workout result and difficulty.
 
-Complete today's check-in: {app_url}/today
+Complete today's check-in: {app_url}/today/exercise
 """
-    html = f"""<html><body style="font-family:system-ui;line-height:1.5;color:#17332d">
-<h2>Coach Forge</h2><p><strong>{escape(coach_note or "Close the ledger honestly.")}</strong></p>
-<h2>Quick check-in</h2><p>Planned today: {meals} main meal{"s" if meals != 1 else ""}<br>{escape(workout)}</p>
+    html = f"""<html><body style="margin:0;background:#f2eee2;color:#25251f;font-family:Georgia,'Times New Roman',serif;line-height:1.55">
+<div style="max-width:720px;margin:0 auto;padding:28px 24px 48px">
+<div style="border-bottom:1px solid #25251f;padding-bottom:14px"><span style="display:inline-block;width:34px;height:34px;border:1px solid #25251f;border-radius:50%;font:700 11px/34px Arial,sans-serif;text-align:center">HA</span><span style="margin-left:10px;font-size:15px">Health Autopilot</span></div>
+<p style="margin:28px 0 8px;color:#6e6d64;font:700 11px Arial,sans-serif;letter-spacing:1.4px;text-transform:uppercase">Personal field notes / Evening</p>
+<h1 style="margin:0 0 20px;font-size:48px;font-weight:400;line-height:.96;letter-spacing:-2px">Close the<br><em style="color:#b44832;font-weight:400">daily ledger.</em></h1>
+<div style="border-top:1px solid #25251f;border-bottom:1px solid #aaa79d;padding:18px 0"><h2 style="margin:0 0 8px;font-size:28px;font-weight:400">Coach Forge</h2><p><strong>{escape(coach_note or "Close the ledger honestly.")}</strong></p></div>
+<h2 style="margin-top:30px;font-size:30px;font-weight:400">Quick check-in</h2><p>Planned today: {meals} main meal{"s" if meals != 1 else ""}<br>{escape(workout)}</p>
 <h3>Emergency option</h3>{emergency_plate_html()}
 <p>If anything differed, record it now. Please also enter workout results and difficulty.</p>
-<p><a href="{escape(app_url)}/today">Complete today's check-in</a></p></body></html>"""
+<p style="margin-top:30px"><a style="display:inline-block;border:1px solid #25251f;padding:12px 16px;background:#25251f;color:#f2eee2;font:700 11px Arial,sans-serif;letter-spacing:1px;text-decoration:none;text-transform:uppercase" href="{escape(app_url)}/today/exercise">Complete today's check-in →</a></p>
+</div></body></html>"""
     return "Quick check-in for today", text, html

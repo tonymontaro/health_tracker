@@ -20,7 +20,7 @@ export function LoginPage() {
       });
       setCsrf(session.csrf_token);
       await refresh();
-      navigate("/today/food");
+      navigate("/today/exercise");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Login failed");
     }
@@ -30,12 +30,13 @@ export function LoginPage() {
     <main className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="brand-mark large">HA</div>
-        <p className="eyebrow">Personal health autopilot</p>
-        <h1>Welcome back</h1>
-        <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        {error && <p className="error">{error}</p>}
-        <button className="primary" type="submit">Open today</button>
+        <p className="eyebrow">Personal field notes</p>
+        <h1>Welcome<br /><em>back.</em></h1>
+        <p className="login-intro">Your daily training, food, and health record is ready when you are.</p>
+        <label>Email<input autoComplete="username" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label>Password<input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <button className="primary" type="submit">Open today's exercise <span aria-hidden="true">→</span></button>
       </form>
     </main>
   );

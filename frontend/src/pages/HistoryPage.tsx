@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import type { DailyFoodLog, DailyWorkoutLog, EntryStatus } from "../api/types";
@@ -66,6 +66,51 @@ function dateLabel(value: string): string {
   });
 }
 
+function WorkoutCorrectionDialog({
+  entry,
+  pending,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  entry: EntryStatus | null;
+  pending: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSubmit: (entry: EntryStatus, summary: string, difficulty: number) => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const [summary, setSummary] = useState("");
+  const [difficulty, setDifficulty] = useState(5);
+  useEffect(() => {
+    const current = dialog.current;
+    if (entry) {
+      setSummary(typeof entry.actual?.summary === "string" ? entry.actual.summary : workoutActualText(entry.actual));
+      setDifficulty(entry.difficulty_1_to_10 ?? 5);
+      if (current && !current.open) current.showModal();
+    } else if (current?.open) current.close();
+  }, [entry]);
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (entry && summary.trim() && Number.isInteger(difficulty) && difficulty >= 1 && difficulty <= 10) {
+      onSubmit(entry, summary.trim(), difficulty);
+    }
+  }
+  return <dialog className="detail-sheet correction-sheet" ref={dialog} aria-labelledby={titleId} onCancel={(event) => { if (pending) event.preventDefault(); else onClose(); }} onClose={onClose}>
+    <button className="sheet-close" type="button" disabled={pending} onClick={onClose}>Close ×</button>
+    <p className="eyebrow">History / Correction</p>
+    <h2 id={titleId}>{entry?.exercise_name ?? "Exercise record"}</h2>
+    <form onSubmit={submit}>
+      <label>What did you actually do?<textarea required value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
+      <label>Difficulty, 1 to 10<input required type="number" min="1" max="10" step="1" value={difficulty} onChange={(event) => setDifficulty(Number(event.target.value))} /></label>
+      <p className="locked-note">Saving a correction preserves the original recommendation and records this as corrected evidence.</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      <button className="primary" disabled={pending || !summary.trim()}>{pending ? "Saving..." : "Save correction"}</button>
+    </form>
+  </dialog>;
+}
+
 function NutritionHistory({
   day,
   onPatch,
@@ -113,6 +158,7 @@ function ExerciseHistory({
 export function HistoryPage({ section }: { section: HistorySection }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
+  const [editingWorkout, setEditingWorkout] = useState<EntryStatus | null>(null);
   const history = useQuery({ queryKey: ["history"], queryFn: () => api<HistorySummary[]>("/history") });
   const visibleHistory = (history.data ?? []).filter((item) => section === "nutrition"
     ? item.nutrition_count > 0 || item.has_food_log
@@ -124,29 +170,15 @@ export function HistoryPage({ section }: { section: HistorySection }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["history"] }),
   });
 
-  function recordWorkout(entry: EntryStatus) {
-    const currentSummary = typeof entry.actual?.summary === "string" ? entry.actual.summary : workoutActualText(entry.actual);
-    const actual = window.prompt(`What did you actually do for ${entry.exercise_name ?? "this exercise"}?`, currentSummary);
-    if (!actual?.trim()) return;
-    const difficultyText = window.prompt("How difficult was it from 1 to 10?", String(entry.difficulty_1_to_10 ?? 5));
-    if (difficultyText === null) return;
-    const difficulty = Number(difficultyText);
-    if (!Number.isInteger(difficulty) || difficulty < 1 || difficulty > 10) {
-      window.alert("Difficulty must be a whole number from 1 to 10.");
-      return;
-    }
-    patch.mutate({ type: "workout", id: entry.id, payload: { status: "completed", actual: { summary: actual.trim() }, difficulty_1_to_10: difficulty } });
-  }
-
-  if (history.isLoading) return <div className="loading">Loading history...</div>;
-  if (history.error) return <div className="error-panel"><h1>History is unavailable</h1><p>{history.error.message}</p></div>;
+  if (history.isLoading) return <div className="loading" role="status">Loading history...</div>;
+  if (history.error) return <div className="error-panel" role="alert"><h1>History is unavailable</h1><p>{history.error.message}</p></div>;
 
   return (
     <>
-      <header className="page-header"><div><p className="eyebrow">Recorded health activity</p><h1>History</h1></div></header>
+      <header className="page-header"><div><p className="eyebrow">Recorded health activity</p><h1>Archive</h1></div><p className="page-deck">Browse training and nutrition evidence, corrections, and the record behind previous recommendations.</p></header>
       <nav className="page-tabs" aria-label="History sections">
-        <NavLink to="/history/nutrition">Food & nutrition</NavLink>
         <NavLink to="/history/exercise">Exercise</NavLink>
+        <NavLink to="/history/nutrition">Food</NavLink>
       </nav>
       <div className="history-layout">
         <aside className="history-list card">
@@ -155,18 +187,19 @@ export function HistoryPage({ section }: { section: HistorySection }) {
         </aside>
         <section className="history-detail">
           {!selectedDate && <div className="empty-state">No entries are available in this history section yet.</div>}
-          {selectedDate && day.isLoading && <div className="loading">Loading {dateLabel(selectedDate)}...</div>}
-          {day.error && <div className="error-panel"><p>{day.error.message}</p></div>}
+          {selectedDate && day.isLoading && <div className="loading" role="status">Loading {dateLabel(selectedDate)}...</div>}
+          {day.error && <div className="error-panel" role="alert"><p>{day.error.message}</p></div>}
           {day.data && <>
             {section === "nutrition"
               ? <NutritionHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "nutrition", id, payload })} />
-              : <ExerciseHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={recordWorkout} />}
+              : <ExerciseHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={(entry) => { patch.reset(); setEditingWorkout(entry); }} />}
             {day.data.profile_snapshot && <section className="card compact"><p className="eyebrow">Profile at recommendation time</p><p>{day.data.profile_snapshot.short_summary}</p></section>}
             {day.data.original_plan && <details className="card"><summary>Original daily recommendation</summary><pre>{JSON.stringify(day.data.original_plan, null, 2)}</pre></details>}
           </>}
         </section>
       </div>
       {patch.error && <p className="error">{patch.error.message}</p>}
+      <WorkoutCorrectionDialog entry={editingWorkout} pending={patch.isPending} error={patch.error?.message ?? null} onClose={() => setEditingWorkout(null)} onSubmit={(entry, summary, difficulty) => patch.mutate({ type: "workout", id: entry.id, payload: { status: "completed", actual: { summary }, difficulty_1_to_10: difficulty } }, { onSuccess: () => setEditingWorkout(null) })} />
     </>
   );
 }

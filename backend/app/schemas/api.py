@@ -127,6 +127,10 @@ class WorkoutCompletionRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class WorkoutRecommendationCompletionRequest(BaseModel):
+    difficulty_1_to_10: int = Field(default=5, ge=1, le=10)
+
+
 class ManualNutritionRequest(BaseModel):
     meal_slot: str
     description: str = Field(min_length=1, max_length=1000)

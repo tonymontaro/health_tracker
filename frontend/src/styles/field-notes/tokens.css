@@ -1,0 +1,35 @@
+:root {
+  color: #25251f;
+  background: #f2eee2;
+  font-family: Georgia, "Times New Roman", serif;
+  font-synthesis: none;
+  --fn-canvas: #f2eee2;
+  --fn-ink: #25251f;
+  --fn-ink-soft: #4f4f48;
+  --fn-muted: #6e6d64;
+  --fn-rule: #aaa79d;
+  --fn-accent: #b44832;
+  --fn-positive: #789177;
+  --fn-dark-surface: #2b2d28;
+  --fn-on-dark: #f2eee2;
+  --fn-warning-bg: #eee0cf;
+  --fn-error-bg: #f2ddd7;
+  --fn-focus: #315f78;
+  --fn-type-ui: 0.75rem;
+  --fn-type-label: 0.6875rem;
+  --paper: var(--fn-canvas);
+  --paper-deep: #e9e3d4;
+  --paper-light: #faf7ee;
+  --ink: var(--fn-ink);
+  --muted: var(--fn-muted);
+  --red: var(--fn-accent);
+  --red-dark: #883524;
+  --sage: #6f896e;
+  --sage-light: #dbe1d3;
+  --line: var(--fn-rule);
+  --line-light: #d2cec1;
+  --focus: var(--fn-focus);
+  --shadow: 0 24px 60px rgb(37 37 31 / 18%);
+  --sans: Arial, Helvetica, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}

@@ -100,12 +100,11 @@ def reconcile_day(db: Session, target_date: date) -> dict[str, int]:
             )
         )
     )
-    assumed_meals = 0
+    assumed_skipped_meals = 0
     for entry in meals:
         if entry.meal_slot in {"meal_1", "meal_2"} or entry.expected:
-            entry.status = "assumed_consumed"
-            adjust_nutrition_entry_inventory(db, entry, direction=-1)
-            assumed_meals += 1
+            entry.status = "skipped_assumed"
+            assumed_skipped_meals += 1
     workouts = list(
         db.scalars(
             select(WorkoutEntry).where(
@@ -120,7 +119,10 @@ def reconcile_day(db: Session, target_date: date) -> dict[str, int]:
     if profile:
         recalculate_derived_summary(db, profile, target_date)
     db.commit()
-    return {"assumed_meals": assumed_meals, "assumed_skipped_exercises": len(workouts)}
+    return {
+        "assumed_skipped_meals": assumed_skipped_meals,
+        "assumed_skipped_exercises": len(workouts),
+    }
 
 
 def correct_nutrition_entry(

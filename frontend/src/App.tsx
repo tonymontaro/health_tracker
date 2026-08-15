@@ -9,7 +9,7 @@ import { TodayPage } from "./pages/TodayPage";
 
 function Protected() {
   const { session, loading } = useAuth();
-  if (loading) return <div className="loading">Preparing your plan...</div>;
+  if (loading) return <div className="loading" role="status">Preparing your field notes...</div>;
   if (!session) return <Navigate to="/login" replace />;
   return <Layout />;
 }
@@ -19,9 +19,9 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Protected />}>
-        <Route path="/today" element={<Navigate to="/today/food" replace />} />
-        <Route path="/today/food" element={<TodayPage section="food" />} />
+        <Route path="/today" element={<Navigate to="/today/exercise" replace />} />
         <Route path="/today/exercise" element={<TodayPage section="exercise" />} />
+        <Route path="/today/food" element={<TodayPage section="food" />} />
         <Route path="/history" element={<Navigate to="/history/exercise" replace />} />
         <Route path="/history/nutrition" element={<HistoryPage section="nutrition" />} />
         <Route path="/history/exercise" element={<HistoryPage section="exercise" />} />
@@ -29,7 +29,7 @@ export default function App() {
         <Route path="/shopping" element={<Navigate to="/inventory" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/today/food" replace />} />
+      <Route path="*" element={<Navigate to="/today/exercise" replace />} />
     </Routes>
   );
 }
