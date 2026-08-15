@@ -17,9 +17,7 @@ def ensure_workout_feedback(
     force: bool = False,
 ) -> WorkoutCoachFeedback | None:
     existing = db.scalar(
-        select(WorkoutCoachFeedback).where(
-            WorkoutCoachFeedback.feedback_date == target_date
-        )
+        select(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == target_date)
     )
     if existing and not force:
         return existing
@@ -34,7 +32,8 @@ def ensure_workout_feedback(
         return None
     has_outcome = any(
         entry.actual_json is not None
-        or entry.status in {"completed", "partial", "skipped", "skipped_assumed", "skipped_by_workout_log"}
+        or entry.status
+        in {"completed", "partial", "skipped", "skipped_assumed", "skipped_by_workout_log"}
         for entry in entries
     )
     if not has_outcome:
@@ -58,8 +57,7 @@ def ensure_workout_feedback(
             for entry in entries
         ],
         "matched_count": sum(
-            entry.planned_recommendation_id is not None
-            and entry.status in {"completed", "partial"}
+            entry.planned_recommendation_id is not None and entry.status in {"completed", "partial"}
             for entry in entries
         ),
         "skipped_count": sum("skipped" in entry.status for entry in entries),

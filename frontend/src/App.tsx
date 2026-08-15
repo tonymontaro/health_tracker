@@ -2,9 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./components/auth";
 import { Layout } from "./components/Layout";
 import { HistoryPage } from "./pages/HistoryPage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { ShoppingPage } from "./pages/ShoppingPage";
 import { TodayPage } from "./pages/TodayPage";
 
 function Protected() {
@@ -25,7 +25,8 @@ export default function App() {
         <Route path="/history" element={<Navigate to="/history/exercise" replace />} />
         <Route path="/history/nutrition" element={<HistoryPage section="nutrition" />} />
         <Route path="/history/exercise" element={<HistoryPage section="exercise" />} />
-        <Route path="/shopping" element={<ShoppingPage />} />
+        <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/shopping" element={<Navigate to="/inventory" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/today/food" replace />} />

@@ -5,7 +5,8 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Equipment, MealTemplate, WorkoutEntry
+from app.db.models import Equipment, MealTemplate, NutritionEntry, WorkoutEntry
+from app.schemas.api import RegenerationRequest
 from app.schemas.plan import (
     DailyPlanProposal,
     ExerciseProposal,
@@ -28,6 +29,14 @@ def test_expected_meal_count_must_match_supplied_meals(db: Session, seeded) -> N
     payload["expected_main_meals"] = 1
     with pytest.raises(ValidationError):
         NutritionPlanProposal.model_validate(payload)
+
+
+def test_regeneration_preference_is_optional_trimmed_and_bounded() -> None:
+    assert RegenerationRequest().preference is None
+    assert RegenerationRequest(preference="  high protein  ").preference == "high protein"
+    assert RegenerationRequest(preference="   ").preference is None
+    with pytest.raises(ValidationError):
+        RegenerationRequest(preference="x" * 2001)
 
 
 def test_fruit_and_snacks_do_not_count_as_main_meals(db: Session, seeded) -> None:
@@ -55,6 +64,86 @@ def test_every_catalog_meal_has_a_simple_numbered_recipe(db: Session, seeded) ->
     )
     assert selected_template
     assert plan.nutrition.meal_1.preparation == simple_meal_recipe(selected_template)
+
+
+def test_catalog_has_fast_variety_and_special_weekly_meals(db: Session, seeded) -> None:
+    templates = list(db.scalars(select(MealTemplate).where(MealTemplate.active.is_(True))))
+    main_meals = [
+        template
+        for template in templates
+        if not {"emergency", "snack", "flexible"}.intersection(
+            tag.casefold() for tag in template.tags
+        )
+    ]
+    easy = [
+        template
+        for template in main_meals
+        if template.effort_score <= 2 and template.hands_on_minutes <= 20
+    ]
+    special = [
+        template
+        for template in main_meals
+        if "special" in {tag.casefold() for tag in template.tags}
+    ]
+
+    assert len(templates) >= 25
+    assert len(easy) >= 12
+    assert len(special) >= 4
+    assert all(template.estimated_protein_g >= 55 for template in special)
+    assert all(template.produce_portions >= 3.5 for template in special)
+
+
+def test_fallback_avoids_yesterdays_meals_and_validator_rejects_a_repeat(
+    db: Session, seeded
+) -> None:
+    yesterday = build_fallback_plan(db, MONDAY)
+    yesterday_meals = [yesterday.nutrition.meal_1, yesterday.nutrition.meal_2]
+    for index, meal in enumerate(yesterday_meals, start=1):
+        assert meal
+        db.add(
+            NutritionEntry(
+                entry_date=MONDAY,
+                meal_slot=f"meal_{index}",
+                planned_recommendation_id=f"yesterday-{index}",
+                food_or_meal_reference=meal.template_name,
+                description=meal.description,
+                quantity_json={},
+                source="fallback",
+                status="planned",
+                expected=True,
+            )
+        )
+    db.flush()
+
+    today_date = date(2026, 8, 11)
+    today = build_fallback_plan(db, today_date)
+    today_names = {
+        today.nutrition.meal_1.template_name,
+        today.nutrition.meal_2.template_name if today.nutrition.meal_2 else None,
+    }
+    yesterday_names = {meal.template_name for meal in yesterday_meals if meal}
+    assert today_names.isdisjoint(yesterday_names)
+    assert validate_plan(db, today, seeded, today_date) == []
+
+    today.nutrition.meal_1 = yesterday.nutrition.meal_1
+    errors = validate_plan(db, today, seeded, today_date)
+    assert any("repeats yesterday's recommendation" in error for error in errors)
+
+
+def test_fallback_requires_a_special_meal_when_none_was_recently_recommended(
+    db: Session, seeded
+) -> None:
+    plan = build_fallback_plan(db, MONDAY)
+    selected_names = {
+        plan.nutrition.meal_1.template_name,
+        plan.nutrition.meal_2.template_name if plan.nutrition.meal_2 else None,
+    }
+    selected_templates = list(
+        db.scalars(select(MealTemplate).where(MealTemplate.name.in_(selected_names)))
+    )
+
+    assert any("special" in template.tags for template in selected_templates)
+    assert validate_plan(db, plan, seeded, MONDAY) == []
 
 
 def test_more_than_three_exercises_is_schema_invalid(db: Session, seeded) -> None:

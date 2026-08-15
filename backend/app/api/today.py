@@ -20,6 +20,7 @@ from app.db.models import (
 from app.db.session import get_db
 from app.schemas.api import (
     ManualNutritionRequest,
+    RegenerationRequest,
     ReplaceRecommendationRequest,
     WorkoutCompletionRequest,
 )
@@ -176,7 +177,13 @@ def get_today(
         "rationale": document["rationale"],
         "coach_feedback": (
             feedback.message
-            if (feedback := db.scalar(select(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == plan.plan_date)))
+            if (
+                feedback := db.scalar(
+                    select(WorkoutCoachFeedback).where(
+                        WorkoutCoachFeedback.feedback_date == plan.plan_date
+                    )
+                )
+            )
             else None
         ),
         "nutrition": document["nutrition"],
@@ -329,6 +336,7 @@ def manual_nutrition(
 
 @router.post("/nutrition/regenerate")
 def regenerate_today_nutrition(
+    payload: RegenerationRequest | None = None,
     _: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -336,7 +344,7 @@ def regenerate_today_nutrition(
     plan = _plan(db, settings)
     _reject_if_food_log_exists(db, plan.plan_date)
     try:
-        regenerate_nutrition(db, settings, plan)
+        regenerate_nutrition(db, settings, plan, preference=payload.preference if payload else None)
     except NutritionRegenerationError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -431,6 +439,7 @@ def skip_workout(
 
 @router.post("/workout/regenerate")
 def regenerate_today_workout(
+    payload: RegenerationRequest | None = None,
     auth: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -458,7 +467,7 @@ def regenerate_today_workout(
                 detail=f"Strava history refresh failed: {exc}. The workout was not regenerated.",
             ) from exc
     try:
-        regenerate_workout(db, settings, plan)
+        regenerate_workout(db, settings, plan, preference=payload.preference if payload else None)
     except WorkoutRegenerationError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

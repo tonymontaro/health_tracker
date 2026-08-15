@@ -107,7 +107,7 @@ def sync_strava(
     auth: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> dict[str, int | str]:
+) -> dict[str, int]:
     connection = _connection(db, auth.account.id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
@@ -139,7 +139,7 @@ def sync_strava_day(
     auth: AuthContext = Depends(require_write_auth),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-) -> dict[str, int]:
+) -> dict[str, int | str]:
     connection = _connection(db, auth.account.id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
@@ -152,10 +152,13 @@ def sync_strava_day(
         ) from exc
     try:
         result = sync_connection_for_date(db, settings, connection, validated_date)
+        response: dict[str, int | str] = dict(result)
         if not result["fetched"]:
-            return {**result, "coach_feedback": ""}
+            response["coach_feedback"] = ""
+            return response
         feedback = ensure_workout_feedback(db, settings, validated_date, force=True)
-        return {**result, "coach_feedback": feedback.message if feedback else ""}
+        response["coach_feedback"] = feedback.message if feedback else ""
+        return response
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

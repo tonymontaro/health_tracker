@@ -6,6 +6,10 @@ It produces one low-friction daily plan with one or two main meals, separate fru
 The application preserves what was recommended, what actually happened, what was assumed at reconciliation, and every later correction.
 Future recommendations use corrected history without rewriting old plans.
 
+Meal recommendations avoid consecutive-day template repeats when alternatives exist, favor easy nutrient-dense food by default, and include a more ambitious curated meal at least weekly.
+Inventory can improve convenience and reduce waste, but missing ingredients do not prevent a meal from being recommended.
+The Today page also accepts optional high-priority preferences when regenerating meals or exercise.
+
 ## Architecture
 
 ```text
@@ -71,7 +75,7 @@ Important groups are:
 - PostgreSQL: `DATABASE_URL`
 - Public URLs: `APP_BASE_URL`, `API_BASE_URL`
 - Time: `APP_TIMEZONE`
-- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
+- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_INVENTORY_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
 - Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID`, `STRAVA_INITIAL_SYNC_DAYS`, `STRAVA_SYNC_LOOKBACK_DAYS`, `STRAVA_SYNC_INTERVAL_MINUTES`
 - Email: `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`
 - Security: `SESSION_SECRET`, `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, `EXTENSION_API_TOKEN`
@@ -94,7 +98,7 @@ cd backend
 ../.venv/bin/alembic upgrade head
 ```
 
-Seed the user profile, equipment, exercise catalog, foods, and 17 curated meal templates:
+Seed the user profile, equipment, exercise catalog, foods, and 25 curated meal templates:
 
 ```bash
 .venv/bin/health-autopilot seed

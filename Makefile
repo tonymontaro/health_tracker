@@ -121,3 +121,4 @@ build:
 	npm run build
 
 verify: lint typecheck test build
+

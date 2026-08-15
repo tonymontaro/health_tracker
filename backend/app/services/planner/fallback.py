@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +19,12 @@ from app.schemas.plan import (
     WorkoutPlanProposal,
 )
 from app.services.planner.meal_recipes import simple_meal_recipe
+from app.services.planner.meal_selection import (
+    eligible_main_meal_templates,
+    is_special_meal,
+    recommended_main_meal_history,
+    special_meal_required_today,
+)
 
 
 def _meal(db: Session, name: str) -> MealProposal:
@@ -36,6 +42,109 @@ def _meal(db: Session, name: str) -> MealProposal:
         ingredients=[f"{item['quantity']} {item['name']}" for item in template.ingredients_json],
         preparation=simple_meal_recipe(template),
     )
+
+
+def _fallback_meal_templates(
+    db: Session, profile: UserProfile, plan_date: date, meal_count: int
+) -> list[MealTemplate]:
+    candidates = eligible_main_meal_templates(db, profile, plan_date)
+    if not candidates:
+        raise RuntimeError("No eligible fallback meal templates are available")
+
+    weekday = plan_date.strftime("%A")
+    if weekday in profile.office_days:
+        flexible = next(
+            (
+                template
+                for template in candidates
+                if "flexible" in {tag.casefold() for tag in template.tags}
+            ),
+            None,
+        )
+        if flexible is not None:
+            return [flexible]
+
+    history = recommended_main_meal_history(db, plan_date)
+    yesterday = {
+        item["template_name"].casefold()
+        for item in history
+        if item["date"] == (plan_date - timedelta(days=1)).isoformat()
+    }
+    counts: dict[str, int] = {}
+    most_recent_index: dict[str, int] = {}
+    for index, item in enumerate(history):
+        name = item["template_name"].casefold()
+        counts[name] = counts.get(name, 0) + 1
+        most_recent_index.setdefault(name, index)
+
+    non_repeating = [
+        template for template in candidates if template.name.casefold() not in yesterday
+    ]
+    if len(non_repeating) >= meal_count:
+        candidates = non_repeating
+
+    def variety_key(template: MealTemplate) -> tuple[float | int | str, ...]:
+        name = template.name.casefold()
+        nutrition_value = (
+            template.estimated_protein_g
+            + (template.estimated_fiber_g * 2)
+            + (template.produce_portions * 5)
+        )
+        return (
+            counts.get(name, 0),
+            0 if name not in most_recent_index else 1,
+            -most_recent_index.get(name, 0),
+            -template.preference_score,
+            -nutrition_value,
+            template.hands_on_minutes,
+            template.name,
+        )
+
+    easy = sorted(
+        (
+            template
+            for template in candidates
+            if template.effort_score <= 2 and template.hands_on_minutes <= 20
+        ),
+        key=variety_key,
+    )
+    ranked = sorted(candidates, key=variety_key)
+    if special_meal_required_today(db, profile, plan_date):
+        specials = sorted(
+            (template for template in candidates if is_special_meal(template)), key=variety_key
+        )
+        if specials:
+            if meal_count == 1:
+                return [specials[0]]
+            easy_choice = next(
+                (template for template in easy if not is_special_meal(template)), None
+            )
+            if easy_choice is None:
+                easy_choice = next(
+                    (template for template in ranked if not is_special_meal(template)), None
+                )
+            if easy_choice is None:
+                return [specials[0]]
+            easy_ingredients = {
+                str(item.get("name", "")).casefold() for item in easy_choice.ingredients_json
+            }
+            special = min(
+                specials,
+                key=lambda template: (
+                    len(
+                        easy_ingredients
+                        & {
+                            str(item.get("name", "")).casefold()
+                            for item in template.ingredients_json
+                        }
+                    ),
+                    variety_key(template),
+                ),
+            )
+            return [easy_choice, special]
+
+    preferred_pool = easy if len(easy) >= meal_count else ranked
+    return preferred_pool[:meal_count]
 
 
 def _last_completed(db: Session, names: set[str]) -> WorkoutEntry | None:
@@ -317,15 +426,22 @@ def _rest() -> WorkoutPlanProposal:
 
 def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
     weekday = plan_date.strftime("%A")
+    profile = db.scalar(select(UserProfile))
+    if profile is None:
+        raise RuntimeError("Profile has not been seeded")
+    meal_count = min(profile.preferred_main_meals_per_day, profile.max_main_meals_per_day)
+    if weekday in profile.office_days:
+        meal_count = 1
+    selected_meals = _fallback_meal_templates(db, profile, plan_date, meal_count)
+    meal_1 = _meal(db, selected_meals[0].name)
+    meal_2 = _meal(db, selected_meals[1].name) if len(selected_meals) == 2 else None
+    if meal_2:
+        meal_2.suggested_window = "evening"
+
     if weekday == "Thursday":
-        meal_1 = _meal(db, "Thursday flexible colleague meal")
-        meal_2 = None
         workout = _rest()
         prep: list[PrepAction] = []
     else:
-        meal_1 = _meal(db, "Chicken power bowl")
-        meal_2 = _meal(db, "Salmon potato plate")
-        meal_2.suggested_window = "evening"
         workout = {
             "Monday": lambda: _home_strength(db),
             "Tuesday": lambda: _run(db),
@@ -334,21 +450,23 @@ def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
             "Saturday": lambda: _gym_strength(db),
             "Sunday": lambda: _run(db),
         }.get(weekday, lambda: _bike(db))()
+        batch_template = next(
+            (template for template in selected_meals if template.batch_size > 1), None
+        )
         prep = (
-            [PrepAction(action="Batch cook 4 chicken power bowls", active_minutes=18, when="Today")]
-            if weekday in {"Sunday", "Wednesday"}
-            else [
+            [
                 PrepAction(
-                    action="Move one prepared meal from freezer to fridge",
-                    active_minutes=1,
-                    when="This evening",
+                    action=(
+                        f"Batch prepare {batch_template.batch_size} servings of "
+                        f"{batch_template.name}"
+                    ),
+                    active_minutes=batch_template.hands_on_minutes,
+                    when="Today",
                 )
             ]
+            if batch_template
+            else []
         )
-
-    profile = db.scalar(select(UserProfile))
-    if profile and profile.max_main_meals_per_day == 1:
-        meal_2 = None
     main_protein = meal_1.estimated_protein_g + (meal_2.estimated_protein_g if meal_2 else 0)
     return DailyPlanProposal(
         nutrition=NutritionPlanProposal(
@@ -382,20 +500,20 @@ def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
             action_needed=False,
             retailer="Either",
             mode="none",
-            summary="Check inventory before the next scheduled list.",
+            summary="Buy any missing ingredients; inventory does not constrain meal selection.",
             estimated_total_chf=0,
             items=[],
         ),
         prep_actions=prep,
-        short_summary="Fallback plan generated from recorded profile, schedule constraints, and recent history.",
+        short_summary="Fallback plan generated with recent-history variety and weekly meal quality.",
         rationale=RecommendationRationale(
             summary="This reliable fallback prioritizes consistency, measurable training, and low active preparation time.",
             objectives=["Preserve strength", "Build aerobic consistency", "Reduce decision effort"],
             history_factors=[workout.summary],
             nutrition_factors=[
-                "High-protein curated meals",
-                "Produce and fiber included",
-                "Optional protein module closes gaps",
+                "Recent meal recommendations are rotated to prevent consecutive repeats",
+                "Easy meals remain the default, with a special higher-effort meal at least weekly",
+                "Protein, fiber, and produce guide quality independently of current inventory",
             ],
             recovery_factors=["Difficulty target remains moderate", "Pain stops progression"],
             scheduling_factors=[f"{weekday} schedule rules applied"],

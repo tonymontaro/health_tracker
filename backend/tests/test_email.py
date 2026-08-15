@@ -102,12 +102,13 @@ def test_morning_email_contains_every_exercise_and_actionable_meal_details(
         assert name in html
     assert document["workout"]["exercises"][0]["instructions"] in text
     assert document["workout"]["exercises"][0]["instructions"] in html
-    assert "250 g Chicken breast" in text
-    assert "200 g cooked Brown rice" in text
+    meal_ingredients = document["nutrition"]["meal_1"]["ingredients"]
+    assert len(meal_ingredients) >= 2
+    for ingredient in meal_ingredients:
+        assert ingredient in text
+        assert ingredient in html
     assert "Ingredients:" in text
     assert "Preparation:" in text
-    assert "250 g Chicken breast" in html
-    assert "200 g cooked Brown rice" in html
     assert "<strong>Ingredients</strong>" in html
     assert "<strong>Preparation:</strong>" in html
 

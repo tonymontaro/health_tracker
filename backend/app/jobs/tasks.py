@@ -82,10 +82,18 @@ def _send_plan_email(
             db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == target_date))
         )
         coach_facts["actual_status"] = {
-            "workouts_completed": sum(entry.status in {"completed", "partial"} for entry in workout_entries),
-            "workouts_unresolved_or_skipped": sum(entry.status not in {"completed", "partial"} for entry in workout_entries),
-            "nutrition_confirmed": sum(entry.status in {"confirmed", "assumed_consumed"} for entry in nutrition_entries),
-            "nutrition_unresolved_or_skipped": sum(entry.status not in {"confirmed", "assumed_consumed"} for entry in nutrition_entries),
+            "workouts_completed": sum(
+                entry.status in {"completed", "partial"} for entry in workout_entries
+            ),
+            "workouts_unresolved_or_skipped": sum(
+                entry.status not in {"completed", "partial"} for entry in workout_entries
+            ),
+            "nutrition_confirmed": sum(
+                entry.status in {"confirmed", "assumed_consumed"} for entry in nutrition_entries
+            ),
+            "nutrition_unresolved_or_skipped": sum(
+                entry.status not in {"confirmed", "assumed_consumed"} for entry in nutrition_entries
+            ),
             "pain_recorded": any(entry.pain_flag for entry in workout_entries),
         }
         note = coach_message(settings, moment="evening_email", facts=coach_facts)

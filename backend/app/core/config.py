@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     openai_planner_model: str = "gpt-5.6-terra"
     openai_qa_model: str = "gpt-5.6-luna"
     openai_food_log_model: str = "gpt-5.6-luna"
+    openai_inventory_model: str = "gpt-5.6-luna"
     openai_workout_log_model: str = "gpt-5.6-luna"
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "medium"
 

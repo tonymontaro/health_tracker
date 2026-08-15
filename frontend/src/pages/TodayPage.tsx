@@ -164,11 +164,16 @@ function FoodLogCard({ today }: { today: Today }) {
 
 function MealRegenerationCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
+  const [preference, setPreference] = useState("");
   const meals = [today.nutrition.meal_1, today.nutrition.meal_2].filter((meal): meal is Meal => meal !== null);
   const unresolved = meals.every((meal) => (today.nutrition_status[meal.recommendation_id]?.status ?? "planned") === "planned");
   const regenerate = useMutation({
-    mutationFn: () => api("/today/nutrition/regenerate", { method: "POST" }),
+    mutationFn: () => api("/today/nutrition/regenerate", {
+      method: "POST",
+      body: JSON.stringify({ preference: preference.trim() || null }),
+    }),
     onSuccess: async () => {
+      setPreference("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
@@ -180,10 +185,17 @@ function MealRegenerationCard({ today }: { today: Today }) {
     : !unresolved
       ? "Meals can only be regenerated before they are confirmed or skipped."
       : null;
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    regenerate.mutate();
+  }
   return (
     <section className="card meal-regeneration-card">
       <div><p className="eyebrow">Scheduled meals</p><strong>Want fresh recommendations?</strong><small>Generate different meals: one quick and easy, one more special, while keeping today's workout unchanged.</small>{disabledReason && <small>{disabledReason}</small>}</div>
-      <button className="quiet" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate meals"}</button>
+      <form className="regeneration-form" onSubmit={submit}>
+        <label>Optional preference<textarea value={preference} maxLength={2000} disabled={regenerate.isPending || disabledReason !== null} onChange={(event) => setPreference(event.target.value)} placeholder="For example: I'd prefer an egg-based or especially high-protein meal today." /></label>
+        <button className="quiet" disabled={regenerate.isPending || disabledReason !== null}>{regenerate.isPending ? "Regenerating..." : "Regenerate meals"}</button>
+      </form>
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
   );
@@ -415,11 +427,16 @@ function WorkoutLogCard({ today }: { today: Today }) {
 
 function WorkoutRegenerationCard({ today }: { today: Today }) {
   const queryClient = useQueryClient();
+  const [preference, setPreference] = useState("");
   const unresolved = today.workout.exercises.every((exercise) => (today.workout_status[exercise.recommendation_id]?.status ?? "planned") === "planned");
   const hasRecordedExercise = today.actual_workouts.some((entry) => entry.status === "completed" || entry.actual);
   const regenerate = useMutation({
-    mutationFn: () => api("/today/workout/regenerate", { method: "POST" }),
+    mutationFn: () => api("/today/workout/regenerate", {
+      method: "POST",
+      body: JSON.stringify({ preference: preference.trim() || null }),
+    }),
     onSuccess: async () => {
+      setPreference("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
@@ -435,10 +452,17 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
       : !unresolved
         ? "The workout can only be regenerated before it is completed or skipped."
         : null;
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    regenerate.mutate();
+  }
   return (
     <section className="card workout-regeneration-card">
       <div><p className="eyebrow">Refresh today's recommendation</p><strong>Use the latest activity history</strong><small>When Strava is connected, yesterday is retrieved first. The planner then rebuilds only today's exercise recommendation from the refreshed 28-day history.</small>{disabledReason && <small>{disabledReason}</small>}</div>
-      <button type="button" className="quiet" disabled={regenerate.isPending || disabledReason !== null} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate exercise"}</button>
+      <form className="regeneration-form" onSubmit={submit}>
+        <label>Optional preference<textarea value={preference} maxLength={2000} disabled={regenerate.isPending || disabledReason !== null} onChange={(event) => setPreference(event.target.value)} placeholder="For example: I'd prefer an upper-body session or an easy run today." /></label>
+        <button className="quiet" disabled={regenerate.isPending || disabledReason !== null}>{regenerate.isPending ? "Regenerating..." : "Regenerate exercise"}</button>
+      </form>
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
     </section>
   );

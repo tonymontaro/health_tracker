@@ -29,7 +29,9 @@ def coach_message(
     if not settings.openai_key_value:
         return _fallback_message(moment, facts)
     try:
-        result = OpenAI(api_key=settings.openai_key_value, timeout=60, max_retries=1).responses.parse(
+        result = OpenAI(
+            api_key=settings.openai_key_value, timeout=60, max_retries=1
+        ).responses.parse(
             model=settings.openai_qa_model,
             reasoning={"effort": "low"},
             input=[

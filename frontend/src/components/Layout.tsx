@@ -12,7 +12,7 @@ export function Layout() {
           <NavLink to="/today/food">Food</NavLink>
           <NavLink to="/today/exercise">Exercise</NavLink>
           <NavLink to="/history">History</NavLink>
-          <NavLink to="/shopping">Shopping</NavLink>
+          <NavLink to="/inventory">Inventory</NavLink>
           <NavLink to="/settings">Settings</NavLink>
           <NavLink
             to="https://solve.anthonyngene.com/"

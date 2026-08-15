@@ -266,7 +266,13 @@ def replace_recommendation(
     profile = db.scalar(select(UserProfile))
     if profile is None:
         raise RuntimeError("Profile is missing")
-    errors = validate_plan(db, proposal_from_document(document), profile, plan.plan_date)
+    errors = validate_plan(
+        db,
+        proposal_from_document(document),
+        profile,
+        plan.plan_date,
+        enforce_meal_selection_policy=False,
+    )
     if errors:
         raise ValueError("Replacement violates domain rules: " + "; ".join(errors))
     db.add(

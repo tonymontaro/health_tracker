@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -284,12 +285,15 @@ class WorkoutEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ImportedActivity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "imported_activity"
-    __table_args__ = (UniqueConstraint("provider", "source_id"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "source_id", name="uq_imported_activity_provider_source"),
+        UniqueConstraint("workout_entry_id", name="uq_imported_activity_workout_entry_id"),
+    )
 
     provider: Mapped[str] = mapped_column(String(40), index=True)
     source_id: Mapped[str] = mapped_column(String(64))
     workout_entry_id: Mapped[UUID] = mapped_column(
-        ForeignKey("workout_entry.id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("workout_entry.id", ondelete="CASCADE"), index=True
     )
     activity_date: Mapped[date] = mapped_column(Date, index=True)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -386,8 +390,20 @@ class PlanModification(UUIDPrimaryKeyMixin, Base):
 
 class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "inventory_item"
+    __table_args__ = (
+        CheckConstraint(
+            "food_item_id IS NOT NULL OR (custom_name IS NOT NULL AND btrim(custom_name) <> '')",
+            name="identity",
+        ),
+    )
 
-    food_item_id: Mapped[UUID] = mapped_column(ForeignKey("food_item.id"), unique=True)
+    food_item_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("food_item.id"), unique=True, nullable=True
+    )
+    custom_name: Mapped[str | None] = mapped_column(String(160))
+    item_type: Mapped[str] = mapped_column(String(40), default="ingredient")
+    notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(40), default="manual")
     quantity_estimate: Mapped[float | None] = mapped_column(Float)
     quantity_label: Mapped[str | None] = mapped_column(String(80))
     unit: Mapped[str] = mapped_column(String(40))

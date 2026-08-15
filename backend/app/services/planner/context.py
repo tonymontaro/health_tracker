@@ -18,6 +18,7 @@ from app.db.models import (
 from app.schemas.plan import ProfileSnapshotSummary
 from app.services.metrics import calculate_goal_progress_evidence, recalculate_derived_summary
 from app.services.planner.domain import exercise_equipment_available
+from app.services.planner.meal_selection import build_meal_selection_policy
 
 
 def build_profile_snapshot(
@@ -116,8 +117,8 @@ def build_planner_context(
     equipment = list(db.scalars(select(Equipment).order_by(Equipment.name)))
     inventory_rows = db.execute(
         select(InventoryItem, FoodItem)
-        .join(FoodItem, FoodItem.id == InventoryItem.food_item_id)
-        .order_by(FoodItem.name)
+        .outerjoin(FoodItem, FoodItem.id == InventoryItem.food_item_id)
+        .order_by(InventoryItem.created_at)
     ).all()
     week_start = plan_date - timedelta(days=plan_date.weekday())
     shopping = db.scalar(
@@ -177,15 +178,18 @@ def build_planner_context(
         "goal_progress_evidence": calculate_goal_progress_evidence(
             db, plan_date - timedelta(days=1)
         ),
+        "meal_selection_policy": build_meal_selection_policy(db, profile, plan_date),
         "current_inventory": [
             {
-                "food": food.name,
+                "food": food.name if food else row.custom_name,
+                "item_type": row.item_type,
                 "quantity": row.quantity_estimate,
                 "quantity_label": row.quantity_label,
                 "unit": row.unit,
                 "confidence": row.confidence,
                 "expires_on": row.expires_on.isoformat() if row.expires_on else None,
                 "location": row.location,
+                "notes": row.notes,
             }
             for row, food in inventory_rows
         ],
@@ -195,10 +199,14 @@ def build_planner_context(
                 "description": meal.description,
                 "ingredients": meal.ingredients_json,
                 "hands_on_minutes": meal.hands_on_minutes,
+                "total_minutes": meal.total_minutes,
                 "batch_size": meal.batch_size,
                 "freezer_friendly": meal.freezer_friendly,
                 "estimated_protein_g": meal.estimated_protein_g,
                 "estimated_fiber_g": meal.estimated_fiber_g,
+                "produce_portions": meal.produce_portions,
+                "effort_score": meal.effort_score,
+                "preference_score": meal.preference_score,
                 "tags": meal.tags,
             }
             for meal in meals

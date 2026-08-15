@@ -101,6 +101,61 @@ STANDARD_ITEMS: list[dict[str, Any]] = [
 ]
 
 
+def update_shopping_item_quantity(
+    plan: ShoppingPlan, item_index: int, quantity: float, unit: str
+) -> None:
+    if plan.status != "draft":
+        raise ValueError("Purchased shopping plans cannot be edited.")
+    if item_index < 0 or item_index >= len(plan.items_json):
+        raise IndexError("Shopping item not found.")
+    items = [dict(item) for item in plan.items_json]
+    item = items[item_index]
+    old_quantity = float(item["quantity"])
+    old_unit = str(item["unit"])
+    old_base, old_dimension = _shopping_base_quantity(old_quantity, old_unit)
+    new_base, new_dimension = _shopping_base_quantity(quantity, unit)
+    if old_dimension != new_dimension:
+        raise ValueError(f"{item['food_name']} must remain measured in {old_dimension}.")
+    unit_price = float(item["estimated_chf"]) / old_base
+    item["quantity"] = quantity
+    item["unit"] = unit
+    item["quantity_label"] = format_shopping_quantity(quantity, unit)
+    item["estimated_chf"] = round(unit_price * new_base, 2)
+    plan.items_json = items
+    _recalculate_shopping_total(plan)
+
+
+def delete_shopping_item(plan: ShoppingPlan, item_index: int) -> None:
+    if plan.status != "draft":
+        raise ValueError("Purchased shopping plans cannot be edited.")
+    if item_index < 0 or item_index >= len(plan.items_json):
+        raise IndexError("Shopping item not found.")
+    plan.items_json = [
+        dict(item) for index, item in enumerate(plan.items_json) if index != item_index
+    ]
+    _recalculate_shopping_total(plan)
+
+
+def format_shopping_quantity(quantity: float, unit: str) -> str:
+    return f"{quantity:g} {unit}" if unit != "item" else f"{quantity:g} items"
+
+
+def _shopping_base_quantity(quantity: float, unit: str) -> tuple[float, str]:
+    if unit == "kg":
+        return quantity * 1000, "weight"
+    if unit == "g":
+        return quantity, "weight"
+    if unit == "ml":
+        return quantity, "volume"
+    return quantity, "item count"
+
+
+def _recalculate_shopping_total(plan: ShoppingPlan) -> None:
+    plan.estimated_total_chf = round(
+        sum(float(item.get("estimated_chf", 0)) for item in plan.items_json), 2
+    )
+
+
 def generate_weekly_shopping_plan(
     db: Session, settings: Settings, week_start: date, retailer: str = "Coop"
 ) -> ShoppingPlan:

@@ -6,6 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Equipment, Exercise, MealTemplate, UserProfile, WorkoutEntry
 from app.schemas.plan import DailyPlanProposal, ExerciseProposal
+from app.services.planner.meal_selection import (
+    eligible_main_meal_templates,
+    is_special_meal,
+    recommended_main_meal_history,
+    special_meal_required_today,
+)
 
 
 def _measurable(exercise: ExerciseProposal) -> bool:
@@ -43,7 +49,12 @@ def _measurable(exercise: ExerciseProposal) -> bool:
 
 
 def validate_plan(
-    db: Session, proposal: DailyPlanProposal, profile: UserProfile, plan_date: date
+    db: Session,
+    proposal: DailyPlanProposal,
+    profile: UserProfile,
+    plan_date: date,
+    *,
+    enforce_meal_selection_policy: bool = True,
 ) -> list[str]:
     errors: list[str] = []
     if proposal.nutrition.expected_main_meals not in {1, 2}:
@@ -100,14 +111,23 @@ def validate_plan(
         if any(item.exercise_type.value != "recovery" for item in proposal.workout.exercises):
             errors.append("Thursday may only contain recovery movement.")
 
+    proposed_meals = [proposal.nutrition.meal_1]
+    if proposal.nutrition.meal_2:
+        proposed_meals.append(proposal.nutrition.meal_2)
+    proposed_names = [meal.template_name.casefold() for meal in proposed_meals]
+    if enforce_meal_selection_policy and len(set(proposed_names)) != len(proposed_names):
+        errors.append("Main meals must use distinct templates.")
+
     meal_templates = {template.name.casefold(): template for template in _active_meal_templates(db)}
-    for meal in [proposal.nutrition.meal_1, proposal.nutrition.meal_2]:
+    selected_templates: list[MealTemplate] = []
+    for meal in proposed_meals:
         if not meal:
             continue
         template = meal_templates.get(meal.template_name.casefold())
         if template is None:
             errors.append(f"Unknown meal template: {meal.template_name}.")
             continue
+        selected_templates.append(template)
         meal_terms = {item["name"].casefold() for item in template.ingredients_json} | {
             template.name.casefold(),
             template.description.casefold(),
@@ -116,6 +136,31 @@ def validate_plan(
         for allergy in profile.allergies:
             if any(allergy.casefold() in term for term in meal_terms):
                 errors.append(f"Meal {meal.template_name} conflicts with allergy {allergy}.")
+
+    if enforce_meal_selection_policy:
+        eligible = eligible_main_meal_templates(db, profile, plan_date)
+        yesterday_names = {
+            item["template_name"].casefold()
+            for item in recommended_main_meal_history(db, plan_date, days=1)
+        }
+        non_repeating = [
+            template for template in eligible if template.name.casefold() not in yesterday_names
+        ]
+        if len(non_repeating) >= len(proposed_meals):
+            for template in selected_templates:
+                if template.name.casefold() in yesterday_names:
+                    errors.append(
+                        f"Meal {template.name} repeats yesterday's recommendation despite available alternatives."
+                    )
+        available_specials = [template for template in eligible if is_special_meal(template)]
+        if (
+            available_specials
+            and special_meal_required_today(db, profile, plan_date)
+            and not any(is_special_meal(template) for template in selected_templates)
+        ):
+            errors.append(
+                "A special higher-effort meal is required today to maintain weekly variety."
+            )
     return errors
 
 

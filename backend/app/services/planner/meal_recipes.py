@@ -70,6 +70,43 @@ RECIPE_STEPS: dict[str, tuple[str, ...]] = {
         "Cut the potatoes into small pieces and boil them for 12-15 minutes, until tender, then drain and cool slightly.",
         "Toss the potatoes with the spinach, chopped tomatoes, and drained sardines, then season to taste.",
     ),
+    "Egg quinoa breakfast skillet": (
+        "Warm the cooked quinoa with the spinach and chopped tomatoes in a nonstick skillet for 4-5 minutes.",
+        "Add the eggs and stir gently until just set, then fold in the cottage cheese and serve.",
+    ),
+    "Salmon skyr potato bowl": (
+        "Cut the potatoes into bite-size pieces and roast them at 200 C for 20-25 minutes.",
+        "Add the salmon for the final 12-15 minutes, until it flakes easily, and wilt the spinach in the hot tray.",
+        "Stir the chopped tomatoes into the skyr, then spoon the cool sauce over the salmon and potatoes.",
+    ),
+    "Chicken lentil skillet": (
+        "Cut up the chicken and cook it in a covered nonstick skillet over medium heat for 8-10 minutes, until cooked through.",
+        "Add the cooked lentils, mixed vegetables, and chopped tomatoes and simmer for 8 minutes, then season and serve.",
+    ),
+    "Cottage cheese chickpea crunch bowl": (
+        "Chop the tomatoes, peppers, and spinach, then toss them with the drained chickpeas.",
+        "Spoon over the cottage cheese, season to taste, and serve with toasted wholegrain bread.",
+    ),
+    "High-protein shakshuka": (
+        "Cook the chopped peppers and tomatoes in a covered oven-safe skillet over medium heat for 10-12 minutes, until thickened.",
+        "Stir in the chickpeas and spinach, make four wells, add the eggs, and bake at 190 C for 8-12 minutes until the whites are set.",
+        "Add spoonfuls of cottage cheese and serve with toasted wholegrain bread.",
+    ),
+    "Mediterranean stuffed peppers": (
+        "Halve the peppers and roast them cut-side up at 200 C for 12 minutes.",
+        "Dice and cook the chicken in a nonstick pan for 8-10 minutes, then mix it with the cooked quinoa, spinach, chopped tomatoes, and cottage cheese.",
+        "Fill the pepper halves and bake for another 15-18 minutes, until browned and hot throughout.",
+    ),
+    "Herbed salmon quinoa feast": (
+        "Roast the broccoli and peppers at 200 C for 15 minutes, then add the salmon and tomatoes for another 12-15 minutes.",
+        "Warm the cooked quinoa with the spinach until the leaves wilt, then season it generously.",
+        "Arrange the roasted vegetables and salmon over the quinoa and serve immediately.",
+    ),
+    "Chicken lentil cottage pie": (
+        "Boil the chopped potatoes for 12-15 minutes until tender, then mash them with the cottage cheese.",
+        "Dice and cook the chicken in a deep nonstick pan for 8-10 minutes, then add the lentils, mixed vegetables, and chopped tomatoes and simmer for 8 minutes.",
+        "Transfer the filling to a baking dish, spread over the potato topping, and bake at 200 C for 18-20 minutes until browned.",
+    ),
     "Thursday flexible colleague meal": (
         "Choose one clear protein, one serving of vegetables or salad, and a carbohydrate according to hunger.",
         "Ask for sauces or dressings on the side, assemble a balanced plate, and eat until comfortably satisfied.",

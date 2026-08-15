@@ -41,6 +41,34 @@ The context builder selects recent, decision-relevant history.
 Pydantic validates shape and Python validates domain rules.
 The deterministic fallback uses the same plan schema and validators.
 
+## Meal selection policy
+
+Daily meal selection uses the active curated template catalog, profile preferences and allergies, recent recommendation and consumption history, training demand, schedule, shopping state, and inventory.
+Inventory is a convenience and waste-reduction signal rather than an eligibility boundary.
+The planner assumes that missing ingredients can be purchased.
+
+When enough eligible alternatives exist, a main meal template recommended yesterday cannot be recommended again today.
+The planner also minimizes repetition across the previous 14 days.
+Easy, nutrient-dense meals remain the normal default, using preparation time, protein, fiber, and produce portions as quality signals.
+At least one template tagged `special` is required in each rolling seven-day period outside the fixed office-day exception, providing a more creative, higher-effort meal while keeping the other meal easy on two-meal days.
+The domain validator enforces consecutive-day variety, distinct meals within a day, allergy safety, catalog validity, and the weekly special-meal rule.
+The deterministic fallback applies the same policy when AI planning is unavailable.
+
+Meal and exercise regeneration accept optional free-text preferences.
+The preference is stored in the planning-run context and treated as high priority after safety, allergy, pain, equipment, schedule, and other hard constraints.
+Meal regeneration still uses only validated meal templates, and exercise regeneration still uses only available catalog exercises.
+
+## Inventory and shopping
+
+The Inventory page combines editable fridge, freezer, pantry, and counter records with the existing weekly shopping recommendations.
+Catalog ingredients retain their food-catalog relationship, while standalone inventory records can represent arbitrary ingredients and prepared meals without polluting the nutrition catalog.
+Before a draft shopping plan is marked purchased, its quantities can be changed and unneeded items can be removed.
+Marking the plan purchased adds its final reviewed quantities to inventory in the same database transaction and is idempotent.
+
+Free-text inventory additions use OpenAI Structured Outputs to distinguish ingredients from prepared meals, estimate missing quantities, identify storage locations, and match catalog foods only when appropriate.
+The provider call and validation finish before database mutation, and the validated additions are committed atomically.
+Provider-side response storage is disabled.
+
 ## Canonical plan and history
 
 There is one `daily_plan` row per Zurich-local date.

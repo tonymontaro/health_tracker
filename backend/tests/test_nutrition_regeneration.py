@@ -105,7 +105,9 @@ def test_regeneration_replaces_double_emergency_meals_and_preserves_workout(
     assert sum(item.source == "regenerated_fallback" for item in modifications) == 2
     run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
     assert run and run.status == "fallback"
-    assert run.context_snapshot_json["nutrition_regeneration"]["preserved_workout"] == original_workout
+    assert (
+        run.context_snapshot_json["nutrition_regeneration"]["preserved_workout"] == original_workout
+    )
     assert "training demand" in plan.current_plan_json["nutrition"]["guidance"]
 
 
@@ -130,3 +132,34 @@ def test_regeneration_rejects_a_resolved_meal_without_changing_plan(
 
     db.refresh(plan)
     assert plan.current_plan_json == before
+
+
+def test_regeneration_prioritizes_and_records_an_optional_meal_preference(
+    db: Session, settings: Settings, seeded
+) -> None:
+    plan = generate_daily_plan(db, settings, TARGET, use_ai=False)
+
+    regenerate_nutrition(
+        db,
+        settings,
+        plan,
+        preference="I'd prefer an egg-based, high-protein meal today",
+        use_ai=False,
+    )
+
+    regenerated_meals = [
+        plan.current_plan_json["nutrition"]["meal_1"],
+        plan.current_plan_json["nutrition"]["meal_2"],
+    ]
+    assert any(
+        "egg" in " ".join(meal["ingredients"]).casefold() for meal in regenerated_meals if meal
+    )
+    run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
+    assert run
+    assert run.context_snapshot_json["nutrition_regeneration"]["user_preference"] == (
+        "I'd prefer an egg-based, high-protein meal today"
+    )
+    assert (
+        "Do not restrict recommendations"
+        in run.context_snapshot_json["meal_selection_policy"]["inventory_policy"]
+    )

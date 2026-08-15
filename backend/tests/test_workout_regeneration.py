@@ -150,3 +150,25 @@ def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
             ],
         }
     ]
+
+
+def test_regeneration_records_an_optional_high_priority_workout_preference(
+    db: Session, settings: Settings, seeded
+) -> None:
+    plan = generate_daily_plan(db, settings, TARGET, use_ai=False)
+
+    regenerate_workout(
+        db,
+        settings,
+        plan,
+        preference="I'd prefer an upper-body strength session today",
+        use_ai=False,
+    )
+
+    run = db.scalar(select(PlanningRun).where(PlanningRun.planner_version == REGENERATION_VERSION))
+    assert run
+    regeneration_context = run.context_snapshot_json["workout_regeneration"]
+    assert regeneration_context["user_preference"] == (
+        "I'd prefer an upper-body strength session today"
+    )
+    assert "high-priority request" in regeneration_context["preference_priority"]

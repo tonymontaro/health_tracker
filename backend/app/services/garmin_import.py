@@ -55,12 +55,8 @@ def import_garmin_csv(db: Session, path: Path) -> dict[str, int]:
                 raise GarminImportError(f"Invalid activity date on CSV row {row_number}") from exc
             activity_type = normalized.get("Activity Type", "Workout")
             exercise_type = _exercise_type(activity_type)
-            duration = _duration(normalized.get("Moving Time")) or _duration(
-                normalized.get("Time")
-            )
-            elapsed = _duration(normalized.get("Elapsed Time")) or _duration(
-                normalized.get("Time")
-            )
+            duration = _duration(normalized.get("Moving Time")) or _duration(normalized.get("Time"))
+            elapsed = _duration(normalized.get("Elapsed Time")) or _duration(normalized.get("Time"))
             distance = _number(normalized.get("Distance"))
             actual: dict[str, Any] = {
                 "activity_name": normalized.get("Title") or activity_type,

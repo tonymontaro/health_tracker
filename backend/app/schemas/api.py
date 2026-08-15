@@ -106,6 +106,20 @@ class ReplaceRecommendationRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class RegenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("preference")
+    @classmethod
+    def normalize_preference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class WorkoutCompletionRequest(BaseModel):
     results: dict[str, dict[str, Any]]
     difficulty_1_to_10: int = Field(ge=1, le=10)
@@ -132,15 +146,6 @@ class HistoryWorkoutUpdate(BaseModel):
     status: str | None = None
     pain_flag: bool | None = None
     notes: str | None = None
-
-
-class InventoryUpdate(BaseModel):
-    quantity_estimate: float | None = Field(default=None, ge=0)
-    quantity_label: str | None = None
-    unit: str | None = None
-    confidence: str | None = None
-    expires_on: date | None = None
-    location: str | None = None
 
 
 class QuestionRequest(BaseModel):
