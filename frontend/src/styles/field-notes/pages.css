@@ -192,6 +192,13 @@
 .rule-list > div { display: flex; justify-content: space-between; gap: 1rem; }
 .token-output { display: block; margin-top: 1rem; padding: 0.8rem; border: 1px solid var(--red); word-break: break-all; background: var(--paper-light); }
 .integration-panel { display: grid; gap: 0.7rem; }
+.account-security-card { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr); gap: 4rem; margin-top: 3.5rem; padding: 2rem 0; }
+.account-security-summary { display: grid; align-content: start; justify-items: start; gap: 0.7rem; }
+.account-security-summary h2, .account-security-summary p { margin-bottom: 0; }
+.account-security-summary strong { overflow-wrap: anywhere; }
+.password-change-form { display: grid; gap: 1rem; }
+.password-change-form h3 { font-size: 1.6rem; }
+.password-change-form > button { justify-self: start; }
 .login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 540px); place-items: stretch; background: var(--ink); }
 .login-page::before { background: repeating-linear-gradient(115deg, transparent 0 48px, #35352f 49px 50px), radial-gradient(circle at 35% 45%, #586451, transparent 40%); content: ""; }
 .login-card { display: grid; align-content: center; gap: 1rem; min-width: 0; padding: clamp(2rem, 7vw, 6rem); background: var(--paper); }

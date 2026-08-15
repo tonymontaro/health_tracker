@@ -46,7 +46,8 @@
   .lead-copy { padding: 2.25rem 0; }
   .exercise-figure { padding: 0 0 2.25rem; border-left: 0; }
   .exercise-graphic { min-height: 390px; }
-  .today-grid, .history-layout, .inventory-add-card, .inventory-list, .settings-grid { grid-template-columns: 1fr; }
+  .today-grid, .history-layout, .inventory-add-card, .inventory-list, .settings-grid, .account-security-card { grid-template-columns: 1fr; }
+  .account-security-card { gap: 2rem; }
   .side-column { gap: 0.4rem; }
   .chat-card { margin-right: -16px; margin-left: -16px; padding-right: 16px; padding-left: 16px; }
   .history-list { position: static; display: flex; max-height: none; overflow-x: auto; }

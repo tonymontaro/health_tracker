@@ -7,9 +7,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const query = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
-      const session = await api<Session>("/auth/session");
-      setCsrf(session.csrf_token);
-      return session;
+      try {
+        const session = await api<Session>("/auth/session");
+        setCsrf(session.csrf_token);
+        return session;
+      } catch (error) {
+        setCsrf("");
+        throw error;
+      }
     },
     retry: false,
   });

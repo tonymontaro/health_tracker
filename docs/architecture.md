@@ -158,6 +158,8 @@ Strava matches and explicit History corrections detach an entry from diary owner
 
 The React app authenticates with an opaque database-backed session in an HttpOnly cookie.
 State-changing browser requests also require a per-session CSRF token.
+Password changes require the current password and an authenticated browser session, retain only that session, and use the existing recommended password hasher.
+Logout deletes the current server-side session, clears the cookie, and clears browser-held CSRF and cached application data.
 The extension uses revocable random bearer tokens whose hashes are stored in PostgreSQL.
 The OpenAI key exists only in backend configuration.
 Strava client credentials exist only in backend configuration.

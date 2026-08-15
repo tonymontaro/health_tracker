@@ -2,18 +2,25 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
-from app.core.security import new_token, session_expiry, token_digest, verify_password
+from app.core.security import (
+    hash_password,
+    new_token,
+    session_expiry,
+    token_digest,
+    verify_password,
+)
 from app.db.models import ApiToken, UserAccount, WebSession
 from app.db.session import get_db
 from app.schemas.api import (
     ApiTokenCreated,
     ApiTokenResponse,
     LoginRequest,
+    PasswordChangeRequest,
     SessionResponse,
 )
 
@@ -75,6 +82,33 @@ def logout(
     response.delete_cookie(settings.session_cookie_name, path="/")
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
+
+
+@router.post("/password", status_code=204)
+def change_password(
+    payload: PasswordChangeRequest,
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+) -> Response:
+    if auth.via_token or auth.session is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password changes require an authenticated browser session",
+        )
+    if not verify_password(payload.current_password, auth.account.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    auth.account.password_hash = hash_password(payload.new_password)
+    db.execute(
+        delete(WebSession).where(
+            WebSession.account_id == auth.account.id,
+            WebSession.id != auth.session.id,
+        )
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/tokens", response_model=list[ApiTokenResponse])

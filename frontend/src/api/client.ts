@@ -13,7 +13,8 @@ export class ApiError extends Error {
 
 export function setCsrf(value: string): void {
   csrfToken = value;
-  sessionStorage.setItem("health_csrf", value);
+  if (value) sessionStorage.setItem("health_csrf", value);
+  else sessionStorage.removeItem("health_csrf");
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -32,4 +33,3 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
-

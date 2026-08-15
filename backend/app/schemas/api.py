@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.plan import ExerciseProposal, FruitProposal, MealProposal, SnackProposal
 
@@ -10,6 +10,19 @@ from app.schemas.plan import ExerciseProposal, FruitProposal, MealProposal, Snac
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=200)
+
+
+class PasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
+
+    @model_validator(mode="after")
+    def require_new_password(self) -> "PasswordChangeRequest":
+        if self.current_password == self.new_password:
+            raise ValueError("The new password must be different from the current password")
+        return self
 
 
 class SessionResponse(BaseModel):

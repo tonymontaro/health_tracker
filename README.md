@@ -66,6 +66,10 @@ change-me-now
 
 Change `BOOTSTRAP_EMAIL` and `BOOTSTRAP_PASSWORD` before the first production seed.
 Never use the development password in production.
+After signing in, change the stored password under Settings, then Security.
+The new password must contain at least 12 characters, and changing it signs out every other browser session.
+Changing `BOOTSTRAP_PASSWORD` after the account has been seeded does not update the existing account password.
+The logout action is in the same Settings security section.
 
 ## Environment variables
 
