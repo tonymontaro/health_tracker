@@ -27,6 +27,8 @@
 .menu-lines i { display: block; height: 1px; background: var(--ink); }
 .mobile-nav { display: none; }
 .page { max-width: 1450px; margin: 0 auto; padding: 0 42px 7rem; }
+.route-transition { min-width: 0; animation: route-enter var(--motion-page-duration) var(--motion-enter); }
+@keyframes route-enter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 .eyebrow, .section-label { margin-bottom: 0.65rem; color: var(--muted); font: 700 var(--fn-type-label)/1.2 var(--sans); letter-spacing: 0.13em; text-transform: uppercase; }
 .eyebrow > span { margin-right: 0.55rem; color: var(--red); }
 .page-tabs { display: flex; width: fit-content; margin: 0; border-bottom: 1px solid var(--line); }

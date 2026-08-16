@@ -84,6 +84,14 @@
 .compact-regeneration-form textarea { min-height: 5rem; }
 .compact-regeneration-form button { justify-self: start; }
 .record-sheet { width: min(780px, 100%); overflow-y: auto; }
+.record-sheet[open] { animation: record-sheet-enter var(--motion-sheet-duration) var(--motion-enter) both; }
+.record-sheet[open]::backdrop { animation: record-backdrop-enter var(--motion-sheet-duration) ease-out both; }
+.record-sheet[open].is-closing { pointer-events: none; animation: record-sheet-exit var(--motion-sheet-duration) var(--motion-exit) both; }
+.record-sheet[open].is-closing::backdrop { animation: record-backdrop-exit var(--motion-sheet-duration) ease-in both; }
+@keyframes record-sheet-enter { from { opacity: 0; transform: translateX(54px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes record-backdrop-enter { from { background: rgb(37 37 31 / 0%); } to { background: rgb(37 37 31 / 48%); } }
+@keyframes record-sheet-exit { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(54px); } }
+@keyframes record-backdrop-exit { from { background: rgb(37 37 31 / 48%); } to { background: rgb(37 37 31 / 0%); } }
 .record-sheet > .eyebrow { clear: both; padding-top: 1.5rem; }
 .record-sheet > h2 { max-width: 10ch; margin: 0.7rem 0 1rem; font-size: clamp(2.7rem, 5vw, 4rem); }
 .record-sheet-intro { max-width: 38rem; color: var(--muted); }

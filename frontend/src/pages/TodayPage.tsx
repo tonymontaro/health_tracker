@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Exercise, ExtractedWorkout, Meal, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
@@ -759,6 +759,7 @@ function ExerciseLead({ today }: { today: Today }) {
 }
 
 type RecordKind = "exercise" | "food";
+const RECORD_SHEET_ANIMATION_MS = 300;
 
 function RecordSheet({
   today,
@@ -772,6 +773,8 @@ function RecordSheet({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
   useEffect(() => {
     const recordDialog = dialog.current;
     if (kind) {
@@ -781,9 +784,42 @@ function RecordSheet({
     }
     if (recordDialog?.open) recordDialog.close();
   }, [kind]);
+  useEffect(() => () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+  }, []);
   const stravaActivities = today.actual_workouts.filter((entry) => entry.source === "strava");
-  return <dialog className="detail-sheet record-sheet" ref={dialog} aria-labelledby="record-sheet-title" onClose={onClose}>
-    <form method="dialog"><button className="sheet-close">Close ×</button></form>
+  function finishClose() {
+    if (dialog.current?.open) dialog.current.close();
+    else onClose();
+    setIsClosing(false);
+  }
+  function requestClose() {
+    if (isClosing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finishClose();
+      return;
+    }
+    setIsClosing(true);
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      finishClose();
+    }, RECORD_SHEET_ANIMATION_MS);
+  }
+  function handleNativeClose() {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setIsClosing(false);
+    onClose();
+  }
+  function closeFromBackdrop(event: MouseEvent<HTMLDialogElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const outsideSheet = event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom;
+    if (outsideSheet) requestClose();
+  }
+  return <dialog className={`detail-sheet record-sheet${isClosing ? " is-closing" : ""}`} ref={dialog} aria-labelledby="record-sheet-title" onClick={closeFromBackdrop} onCancel={(event) => { event.preventDefault(); requestClose(); }} onClose={handleNativeClose}>
+    <button type="button" className="sheet-close" onClick={requestClose}>Close ×</button>
     <p className="eyebrow">Record the day / {today.date}</p>
     <h2 id="record-sheet-title">What should the record say?</h2>
     <p className="record-sheet-intro">Choose a section and describe the day in your own words. The structured fields remain available for precise changes.</p>

@@ -54,7 +54,9 @@ export function Layout() {
         <button className="record-trigger" type="button" aria-haspopup="dialog" onClick={openRecorder}><span className="menu-lines" aria-hidden="true"><i /><i /><i /></span><b>Record</b></button>
       </header>
       <main className="page">
-        <Outlet />
+        <div className="route-transition" key={location.pathname}>
+          <Outlet />
+        </div>
       </main>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {primaryLinks.slice(0, 4).map((link) => <NavLink key={link.to} to={link.to}><span aria-hidden="true">{link.label.charAt(0)}</span>{link.label}</NavLink>)}

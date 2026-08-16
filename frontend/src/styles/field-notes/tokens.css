@@ -30,6 +30,10 @@
   --line-light: #d2cec1;
   --focus: var(--fn-focus);
   --shadow: 0 24px 60px rgb(37 37 31 / 18%);
+  --motion-sheet-duration: 300ms;
+  --motion-page-duration: 1s;
+  --motion-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-exit: cubic-bezier(0.64, 0, 0.78, 0);
   --sans: Arial, Helvetica, sans-serif;
   --serif: Georgia, "Times New Roman", serif;
 }
