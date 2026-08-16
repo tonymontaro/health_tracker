@@ -56,6 +56,8 @@
   .page-header-actions { align-items: stretch; flex-direction: column; }
   .shopping-summary { grid-template-columns: 1fr; gap: 1rem; }
   .shopping-summary > div { padding: 0; border: 0; }
+  .outlook-introduction, .outlook-days { grid-template-columns: 1fr; }
+  .outlook-introduction { gap: 1rem; }
   .login-page { grid-template-columns: 1fr; background: var(--paper); }
   .login-page::before { display: none; }
 }
@@ -84,6 +86,10 @@
   .component-list li { grid-template-columns: 1fr auto; }
   .component-list li small { grid-column: 1 / -1; }
   .detail-sheet { width: 100%; padding: 1.5rem; }
+  .seven-day-outlook > summary { align-items: flex-start; min-height: 110px; }
+  .outlook-toggle b { display: none; }
+  .outlook-session-heading, .outlook-exercises li, .seven-day-outlook > footer { align-items: flex-start; flex-direction: column; }
+  .outlook-exercises li span { text-align: left; }
 }
 
 @media (prefers-reduced-motion: reduce) {

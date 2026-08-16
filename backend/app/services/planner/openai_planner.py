@@ -52,6 +52,10 @@ Treat current_target_goal as the active outcome while preserving the primary hyb
 Use goal_progress_evidence to estimate readiness and choose useful progression. Clearly label race-time
 or readiness estimates as estimates, state material terrain/data assumptions, and never invent results.
 Use at most one preparation action. Prefer batch cooking, inventory use, and 5-10 active minutes.
+When receding_horizon is supplied, use its current_day_guidance as the strategic baseline. Preserve
+its workout and meal choices when they remain appropriate, but adapt today's exact prescription when
+recent completion, difficulty, pain, recovery, nutrition adherence, or schedule evidence warrants it.
+Briefly explain any material deviation in the user-facing rationale.
 Do not provide medical diagnosis. Recommend professional help for concerning pain or symptoms.
 Do not output hidden chain-of-thought. Rationale must be concise and user-facing.
 """

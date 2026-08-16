@@ -21,10 +21,10 @@ PostgreSQL history
 Derived metrics and ProfileSnapshot
        |
        v
-Deterministic PlannerContext
+RecedingHorizonContext + previous horizon revision
        |
        v
-OpenAI structured proposal
+OpenAI 14-day structured proposal
        |
        v
 Pydantic and domain validation
@@ -33,6 +33,23 @@ Pydantic and domain validation
        |                    |
        |                    +-- invalid --> deterministic fallback
        v
+Immutable TwoWeekPlan revision for this anchor date
+       |
+       +-- days 0-1: adaptive zone
+       +-- days 0-6: committed user-facing plan
+       +-- days 7-13: provisional AI planning horizon
+       |
+       v
+Daily PlannerContext with the complete horizon
+       |
+       v
+OpenAI structured daily proposal
+       |
+       v
+Pydantic and domain validation
+       |
+       +-- invalid --> repair or deterministic fallback
+       v
 Canonical DailyPlan
 ```
 
@@ -40,6 +57,21 @@ The model never reads the database directly.
 The context builder selects recent, decision-relevant history.
 Pydantic validates shape and Python validates domain rules.
 The deterministic fallback uses the same plan schema and validators.
+
+Planning uses a receding horizon.
+The AI considers fourteen consecutive days so that training load, recovery, meal variety, preparation, and fueling are not chosen in isolation.
+The first seven days contain exact meal-template selections, fueling guidance, and measurable workout prescriptions and are the only horizon days exposed in the UI.
+The second week remains provisional and is supplied to later planner runs as strategic context.
+
+One immutable `two_week_plan` revision is stored per Zurich-local anchor date.
+Each revision points to the preceding revision and preserves overlapping committed dates unless new evidence creates a clear reason to change them.
+Today and tomorrow are the adaptation zone.
+Completed or skipped training, recorded difficulty, pain or soreness notes, nutrition adherence, and known schedule constraints can change the near-term prescription.
+Unrecorded sleep, appetite, soreness, fatigue, or schedule changes are never invented.
+
+The rolling horizon is generated or refreshed before the daily plan.
+The complete fourteen-day document and the matching current-day guidance are then included in the daily planner context.
+The daily plan may deviate when recent evidence or a hard constraint warrants it, but must explain material deviations and still pass the existing safety and catalog validators.
 
 ## Meal selection policy
 
@@ -71,6 +103,8 @@ Provider-side response storage is disabled.
 
 ## Canonical plan and history
 
+There is one immutable `two_week_plan` revision per Zurich-local anchor date.
+Only its first seven days are committed and user-facing, while all fourteen days remain available to subsequent planning runs.
 There is one `daily_plan` row per Zurich-local date.
 `original_plan_json` is immutable after creation.
 `current_plan_json` contains user-approved replacements.

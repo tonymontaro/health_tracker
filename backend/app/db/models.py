@@ -199,6 +199,26 @@ class PlanningRun(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TwoWeekPlan(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "two_week_plan"
+    __table_args__ = (UniqueConstraint("anchor_date"),)
+
+    anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    window_start: Mapped[date] = mapped_column(Date, index=True)
+    window_end: Mapped[date] = mapped_column(Date, index=True)
+    previous_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("two_week_plan.id", ondelete="SET NULL"), index=True
+    )
+    profile_snapshot_id: Mapped[UUID] = mapped_column(ForeignKey("profile_snapshot.id"))
+    model: Mapped[str] = mapped_column(String(160))
+    planner_version: Mapped[str] = mapped_column(String(80))
+    source: Mapped[str] = mapped_column(String(40))
+    context_snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    validation_result_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class DailyPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "daily_plan"
     __table_args__ = (UniqueConstraint("plan_date"),)

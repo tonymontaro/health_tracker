@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Exercise, ExtractedWorkout, Meal, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
+import type { Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
 import { MealFigure } from "../components/food/MealFigure";
 import { StatusPill } from "../components/StatusPill";
@@ -27,7 +27,7 @@ function pace(seconds?: number | null): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}/km`;
 }
 
-function exerciseText(exercise: Exercise): string {
+function exerciseText(exercise: Omit<Exercise, "recommendation_id">): string {
   if (exercise.exercise_type === "run") {
     return `${exercise.distance_km?.toFixed(1)} km @ ${pace(exercise.pace_seconds_per_km)}`;
   }
@@ -842,6 +842,40 @@ function FolioRule({ label, number }: { label: string; number: string }) {
   return <div className="folio-rule" aria-hidden="true"><span>{label}</span><i /><b>{number}</b></div>;
 }
 
+function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook; section: "food" | "exercise" }) {
+  const isFood = section === "food";
+  const strategy = isFood ? outlook.nutrition_strategy : outlook.training_strategy;
+  return <details className={`seven-day-outlook outlook-${section}`}>
+    <summary>
+      <div><p className="eyebrow">Receding horizon / committed week</p><h2>{isFood ? "The next seven days of meals" : "The next seven days of exercise"}</h2></div>
+      <span className="outlook-toggle"><b>View plan</b><i aria-hidden="true">+</i></span>
+    </summary>
+    <div className="outlook-introduction">
+      <p>{strategy}</p>
+      <small>{outlook.adjustment_summary}</small>
+    </div>
+    <div className="outlook-days">
+      {outlook.days.map((day, index) => {
+        const formatted = new Date(`${day.plan_date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+        return <article className="outlook-day" key={`${section}-${day.plan_date}`}>
+          <header><span>{String(index + 1).padStart(2, "0")}</span><div><time dateTime={day.plan_date}>{formatted}</time><small>{index === 0 ? "Adapts today" : index === 1 ? "Adaptation window" : "Committed"}</small></div></header>
+          {isFood ? <>
+            <h3>{day.nutrition.meal_template_names.join(" + ")}</h3>
+            <p>{day.nutrition.focus}</p>
+            {day.nutrition.fueling_recommendations.length > 0 && <ul>{day.nutrition.fueling_recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
+            {day.nutrition.prep_note && <small className="outlook-prep">Prep: {day.nutrition.prep_note}</small>}
+          </> : <>
+            <div className="outlook-session-heading"><h3>{day.workout.title}</h3><span>{day.workout.expected_duration_minutes} min · {day.workout.intensity.replaceAll("_", " ")}</span></div>
+            {day.workout.exercises.length > 0 ? <ul className="outlook-exercises">{day.workout.exercises.map((exercise) => <li key={exercise.exercise_name}><strong>{exercise.exercise_name}</strong><span>{exerciseText(exercise)}</span></li>)}</ul> : <p>{day.workout.summary}</p>}
+          </>}
+          <p className="outlook-rationale">{day.rationale}</p>
+        </article>;
+      })}
+    </div>
+    <footer><span>7 days committed</span><span>14 days considered by AI</span><span>Updated daily</span></footer>
+  </details>;
+}
+
 export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
   const location = useLocation();
@@ -909,6 +943,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
         </aside>
       </div>
       <ChatPanel key={`${data.date}-${alternativeQuestion}`} initialQuestion={alternativeQuestion} canAsk={!isHistorical} selectedDate={data.date} />
+      {!isHistorical && data.outlook && <SevenDayOutlook outlook={data.outlook} section={section} />}
       <RecordSheet today={data} kind={recordKind} onKindChange={(kind) => setRecordKind(kind)} onClose={() => setRecordKind(null)} />
     </div>
   );

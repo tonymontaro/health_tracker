@@ -10,6 +10,7 @@ from app.db.models import (
     Exercise,
     NutritionEntry,
     PlanningRun,
+    TwoWeekPlan,
     UserProfile,
     WorkoutEntry,
 )
@@ -26,6 +27,8 @@ from app.services.planner.openai_planner import (
     OpenAIPlanner,
     PlannerProviderError,
 )
+from app.services.planner.two_week import ensure_two_week_plan
+from app.services.recording_dates import current_recording_date
 
 
 def generate_daily_plan(
@@ -36,13 +39,25 @@ def generate_daily_plan(
     use_ai: bool = True,
 ) -> DailyPlan:
     existing = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == plan_date))
-    if existing:
+    horizon = db.scalar(select(TwoWeekPlan).where(TwoWeekPlan.anchor_date == plan_date))
+    if existing and (horizon or plan_date != current_recording_date(settings)):
         return existing
     profile = db.scalar(select(UserProfile))
     if profile is None:
         raise RuntimeError("Profile has not been seeded")
 
     snapshot = build_profile_snapshot(db, profile, plan_date)
+    if horizon is None:
+        horizon = ensure_two_week_plan(
+            db,
+            settings,
+            plan_date,
+            use_ai=use_ai,
+            profile=profile,
+            snapshot=snapshot,
+        )
+    if existing:
+        return existing
     context = build_planner_context(db, profile, snapshot, plan_date)
     run = PlanningRun(
         plan_date=plan_date,
@@ -97,7 +112,15 @@ def generate_daily_plan(
             validation["openai_error"] = last_error
 
     if proposal is None:
-        proposal = build_fallback_plan(db, plan_date)
+        current_horizon_day = next(
+            (
+                day
+                for day in horizon.plan_json.get("days", [])
+                if day.get("plan_date") == plan_date.isoformat()
+            ),
+            None,
+        )
+        proposal = build_fallback_plan(db, plan_date, horizon_day=current_horizon_day)
         fallback_errors = validate_plan(db, proposal, profile, plan_date)
         validation["fallback_errors"] = fallback_errors
         if fallback_errors:

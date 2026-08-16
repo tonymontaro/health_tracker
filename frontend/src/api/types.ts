@@ -144,6 +144,39 @@ export type Exercise = {
   instructions: string;
 };
 
+export type OutlookDay = {
+  plan_date: string;
+  commitment: "committed" | "provisional";
+  adaptation: "adaptive" | "stable";
+  workout: {
+    kind: string;
+    intensity: string;
+    title: string;
+    exercises: Array<Omit<Exercise, "recommendation_id">>;
+    expected_duration_minutes: number;
+    summary: string;
+  };
+  nutrition: {
+    expected_main_meals: 1 | 2;
+    meal_template_names: string[];
+    focus: string;
+    fueling_recommendations: string[];
+    prep_note: string | null;
+  };
+  rationale: string;
+};
+
+export type RecedingHorizonOutlook = {
+  anchor_date: string;
+  source: "openai" | "fallback";
+  summary: string;
+  training_strategy: string;
+  nutrition_strategy: string;
+  adjustment_summary: string;
+  days: OutlookDay[];
+  generated_at: string;
+};
+
 export type Today = {
   date: string;
   recording_dates: string[];
@@ -194,6 +227,7 @@ export type Today = {
     ingredients: Array<{ name: string; quantity: string }>;
     preparation: string;
   };
+  outlook: RecedingHorizonOutlook | null;
 };
 
 export type Profile = {

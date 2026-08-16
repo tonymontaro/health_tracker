@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -424,7 +425,12 @@ def _rest() -> WorkoutPlanProposal:
     )
 
 
-def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
+def build_fallback_plan(
+    db: Session,
+    plan_date: date,
+    *,
+    horizon_day: dict[str, Any] | None = None,
+) -> DailyPlanProposal:
     weekday = plan_date.strftime("%A")
     profile = db.scalar(select(UserProfile))
     if profile is None:
@@ -433,6 +439,17 @@ def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
     if weekday in profile.office_days:
         meal_count = 1
     selected_meals = _fallback_meal_templates(db, profile, plan_date, meal_count)
+    horizon_meal_names = (
+        horizon_day.get("nutrition", {}).get("meal_template_names", []) if horizon_day else []
+    )
+    if horizon_meal_names:
+        templates = {
+            template.name.casefold(): template
+            for template in eligible_main_meal_templates(db, profile, plan_date)
+        }
+        guided = [templates.get(str(name).casefold()) for name in horizon_meal_names]
+        if all(guided) and len(guided) == meal_count:
+            selected_meals = [template for template in guided if template is not None]
     meal_1 = _meal(db, selected_meals[0].name)
     meal_2 = _meal(db, selected_meals[1].name) if len(selected_meals) == 2 else None
     if meal_2:
@@ -467,7 +484,17 @@ def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
             if batch_template
             else []
         )
+    if horizon_day and horizon_day.get("workout"):
+        workout = WorkoutPlanProposal.model_validate(horizon_day["workout"])
     main_protein = meal_1.estimated_protein_g + (meal_2.estimated_protein_g if meal_2 else 0)
+    horizon_fueling = (
+        horizon_day.get("nutrition", {}).get("fueling_recommendations", []) if horizon_day else []
+    )
+    nutrition_guidance = (
+        " ".join(str(item) for item in horizon_fueling)
+        if horizon_fueling
+        else "Use one or two main meals only. Fruit and optional protein modules remain separate."
+    )
     return DailyPlanProposal(
         nutrition=NutritionPlanProposal(
             meal_1=meal_1,
@@ -493,7 +520,7 @@ def build_fallback_plan(db: Session, plan_date: date) -> DailyPlanProposal:
             ],
             expected_main_meals=1 if meal_2 is None else 2,
             approximate_protein_g=min(250, main_protein + 30),
-            guidance="Use one or two main meals only. Fruit and optional protein modules remain separate.",
+            guidance=nutrition_guidance,
         ),
         workout=workout,
         shopping=ShoppingPlanSummary(

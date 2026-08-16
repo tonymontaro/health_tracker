@@ -85,9 +85,13 @@ def test_failed_ai_planning_reaches_fallback(db: Session, monkeypatch, seeded) -
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr("app.services.planner.openai_planner.OpenAIPlanner.generate", fail)
+    monkeypatch.setattr(
+        "app.services.planner.openai_two_week_planner.OpenAITwoWeekPlanner.generate",
+        fail,
+    )
     plan = generate_daily_plan(db, settings, TARGET, use_ai=True)
     assert plan.current_plan_json["source"] == "fallback"
-    assert calls == 2
+    assert calls == 4
 
 
 def test_plan_generation_is_idempotent(db: Session, settings: Settings, seeded) -> None:

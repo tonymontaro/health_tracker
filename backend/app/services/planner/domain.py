@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Equipment, Exercise, MealTemplate, UserProfile, WorkoutEntry
 from app.schemas.plan import DailyPlanProposal, ExerciseProposal
+from app.schemas.two_week_plan import TwoWeekPlanProposal
 from app.services.planner.meal_selection import (
     eligible_main_meal_templates,
     is_special_meal,
@@ -161,6 +162,130 @@ def validate_plan(
             errors.append(
                 "A special higher-effort meal is required today to maintain weekly variety."
             )
+    return errors
+
+
+def validate_two_week_plan(
+    db: Session,
+    proposal: TwoWeekPlanProposal,
+    profile: UserProfile,
+    plan_date: date,
+) -> list[str]:
+    errors: list[str] = []
+    if proposal.window_start != plan_date:
+        errors.append("The receding horizon must start on the planning date.")
+
+    exercise_catalog = {
+        exercise.name.casefold(): exercise
+        for exercise in db.scalars(select(Exercise).where(Exercise.active.is_(True)))
+    }
+    previous_entries = list(
+        db.scalars(
+            select(WorkoutEntry).where(WorkoutEntry.entry_date == plan_date - timedelta(days=1))
+        )
+    )
+    recovery_cautioned = any(
+        entry.pain_flag
+        or (entry.status in {"completed", "partial"} and (entry.difficulty_1_to_10 or 0) >= 8)
+        for entry in previous_entries
+    )
+
+    for day in proposal.days:
+        weekday = day.plan_date.strftime("%A")
+        workout = day.workout
+        if len(workout.exercises) > profile.max_exercises_per_day:
+            errors.append(f"{day.plan_date}: workout exceeds the exercise limit.")
+        if weekday == "Thursday":
+            if workout.intensity not in {"rest", "very_light", "light"}:
+                errors.append(f"{day.plan_date}: Thursday cannot contain hard training.")
+            if any(item.exercise_type.value != "recovery" for item in workout.exercises):
+                errors.append(f"{day.plan_date}: Thursday may only contain recovery movement.")
+        seen_exercises: set[str] = set()
+        for prescription in workout.exercises:
+            key = prescription.exercise_name.casefold()
+            catalog_item = exercise_catalog.get(key)
+            if catalog_item is None:
+                errors.append(f"{day.plan_date}: unknown exercise {prescription.exercise_name}.")
+                continue
+            if key in seen_exercises:
+                errors.append(f"{day.plan_date}: duplicate exercise {prescription.exercise_name}.")
+            seen_exercises.add(key)
+            if catalog_item.gym_only and (
+                weekday not in {"Saturday", "Sunday"} or weekday not in profile.gym_days
+            ):
+                errors.append(
+                    f"{day.plan_date}: gym-only exercise {prescription.exercise_name} "
+                    f"is not allowed on {weekday}."
+                )
+            if not exercise_equipment_available(db, catalog_item):
+                errors.append(
+                    f"{day.plan_date}: equipment is unavailable for {prescription.exercise_name}."
+                )
+            if any(excluded.casefold() in key for excluded in profile.excluded_exercises):
+                errors.append(f"{day.plan_date}: excluded exercise {prescription.exercise_name}.")
+            if not _measurable(prescription):
+                errors.append(
+                    f"{day.plan_date}: {prescription.exercise_name} lacks a measurable workload."
+                )
+            previous = db.scalar(
+                select(WorkoutEntry)
+                .where(func.lower(WorkoutEntry.exercise_name) == key)
+                .order_by(WorkoutEntry.entry_date.desc())
+            )
+            if (
+                previous
+                and previous.pain_flag
+                and _workload_increased(previous.prescription_json, prescription)
+            ):
+                errors.append(
+                    f"{day.plan_date}: pain prevents progression of {prescription.exercise_name}."
+                )
+
+        if day.nutrition.expected_main_meals > profile.max_main_meals_per_day:
+            errors.append(f"{day.plan_date}: nutrition exceeds the main-meal limit.")
+        eligible_meals = {
+            template.name.casefold(): template
+            for template in eligible_main_meal_templates(db, profile, day.plan_date)
+        }
+        selected_meals: list[MealTemplate] = []
+        for name in day.nutrition.meal_template_names:
+            template = eligible_meals.get(name.casefold())
+            if template is None:
+                errors.append(f"{day.plan_date}: unknown or ineligible meal template {name}.")
+            else:
+                selected_meals.append(template)
+        if day.plan_date == plan_date:
+            yesterday_names = {
+                item["template_name"].casefold()
+                for item in recommended_main_meal_history(db, plan_date, days=1)
+            }
+            non_repeating = [
+                template for key, template in eligible_meals.items() if key not in yesterday_names
+            ]
+            if len(non_repeating) >= len(selected_meals) and any(
+                template.name.casefold() in yesterday_names for template in selected_meals
+            ):
+                errors.append(
+                    f"{day.plan_date}: today's meals repeat yesterday despite available alternatives."
+                )
+            available_specials = [
+                template for template in eligible_meals.values() if is_special_meal(template)
+            ]
+            if (
+                available_specials
+                and special_meal_required_today(db, profile, plan_date)
+                and not any(is_special_meal(template) for template in selected_meals)
+            ):
+                errors.append(
+                    f"{day.plan_date}: today's meals require one special higher-effort template."
+                )
+
+    if recovery_cautioned and proposal.days[0].workout.intensity not in {
+        "rest",
+        "very_light",
+        "light",
+    }:
+        errors.append("Today's plan must reduce load after pain or a high-effort session.")
     return errors
 
 

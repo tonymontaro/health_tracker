@@ -13,6 +13,7 @@ from app.db.models import (
     MealTemplate,
     ProfileSnapshot,
     ShoppingPlan,
+    TwoWeekPlan,
     UserProfile,
 )
 from app.schemas.plan import ProfileSnapshotSummary
@@ -107,7 +108,12 @@ def snapshot_summary(snapshot: ProfileSnapshot) -> ProfileSnapshotSummary:
 
 
 def build_planner_context(
-    db: Session, profile: UserProfile, snapshot: ProfileSnapshot, plan_date: date
+    db: Session,
+    profile: UserProfile,
+    snapshot: ProfileSnapshot,
+    plan_date: date,
+    *,
+    include_two_week_plan: bool = True,
 ) -> dict[str, Any]:
     yesterday = db.scalar(
         select(DailyPlan).where(DailyPlan.plan_date == plan_date - timedelta(days=1))
@@ -144,7 +150,7 @@ def build_planner_context(
 
     nutrition_summary = dict(snapshot.recent_nutrition_summary_json)
     recent_meals = nutrition_summary.pop("recent_meals", [])
-    return {
+    context = {
         "current_date": plan_date.isoformat(),
         "day_of_week": plan_date.strftime("%A"),
         "timezone": profile.timezone,
@@ -235,3 +241,34 @@ def build_planner_context(
         },
         "shopping_state": shopping.items_json if shopping else None,
     }
+    if include_two_week_plan:
+        horizon = db.scalar(
+            select(TwoWeekPlan)
+            .where(
+                TwoWeekPlan.anchor_date <= plan_date,
+                TwoWeekPlan.window_start <= plan_date,
+                TwoWeekPlan.window_end >= plan_date,
+            )
+            .order_by(TwoWeekPlan.anchor_date.desc())
+        )
+        if horizon is not None:
+            days = horizon.plan_json.get("days", [])
+            current_day = next(
+                (day for day in days if day.get("plan_date") == plan_date.isoformat()), None
+            )
+            context["receding_horizon"] = {
+                "anchor_date": horizon.anchor_date.isoformat(),
+                "window_start": horizon.window_start.isoformat(),
+                "window_end": horizon.window_end.isoformat(),
+                "summary": horizon.plan_json.get("summary"),
+                "training_strategy": horizon.plan_json.get("training_strategy"),
+                "nutrition_strategy": horizon.plan_json.get("nutrition_strategy"),
+                "adjustment_summary": horizon.plan_json.get("adjustment_summary"),
+                "current_day_guidance": current_day,
+                "full_fourteen_day_horizon": days,
+                "daily_adaptation_rule": (
+                    "Prefer the current-day guidance, but adapt today's concrete plan when recent "
+                    "outcomes or hard constraints justify it. Explain material deviations."
+                ),
+            }
+    return context

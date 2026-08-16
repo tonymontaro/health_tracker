@@ -2,6 +2,7 @@
 
 Health Autopilot is a single-user personal health and hybrid training planner.
 It produces one low-friction daily plan with one or two main meals, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
+It also maintains a rolling fourteen-day AI planning horizon, commits the next seven days for review, and adapts today and tomorrow from recorded outcomes.
 
 The application preserves what was recommended, what actually happened, what was assumed at reconciliation, and every later correction.
 Future recommendations use corrected history without rewriting old plans.
@@ -9,6 +10,7 @@ Future recommendations use corrected history without rewriting old plans.
 Meal recommendations avoid consecutive-day template repeats when alternatives exist, favor easy nutrient-dense food by default, and include a more ambitious curated meal at least weekly.
 Inventory can improve convenience and reduce waste, but missing ingredients do not prevent a meal from being recommended.
 The Today page also accepts optional high-priority preferences when regenerating meals or exercise.
+Collapsed seven-day outlooks appear at the bottom of the Food and Exercise pages.
 
 ## Architecture
 
@@ -176,6 +178,8 @@ Generate a plan manually:
 ```bash
 .venv/bin/health-autopilot plan --date 2026-08-09
 ```
+
+Daily generation first creates that date's immutable fourteen-day horizon revision, then uses it to guide the canonical daily plan.
 
 Force deterministic fallback planning:
 
