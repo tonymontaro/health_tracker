@@ -46,7 +46,8 @@
   .lead-copy { padding: 2.25rem 0; }
   .exercise-figure { padding: 0 0 2.25rem; border-left: 0; }
   .exercise-graphic { min-height: 390px; }
-  .today-grid, .history-layout, .inventory-add-card, .inventory-list, .settings-grid, .account-security-card { grid-template-columns: 1fr; }
+  .today-grid, .history-layout, .settings-grid, .account-security-card { grid-template-columns: 1fr; }
+  .inventory-add-body { grid-template-columns: 1fr; gap: 1.5rem; }
   .account-security-card { gap: 2rem; }
   .side-column { gap: 0.4rem; }
   .chat-card { margin-right: -16px; margin-left: -16px; padding-right: 16px; padding-left: 16px; }
@@ -56,8 +57,11 @@
   .page-header-actions { align-items: stretch; flex-direction: column; }
   .shopping-summary { grid-template-columns: 1fr; gap: 1rem; }
   .shopping-summary > div { padding: 0; border: 0; }
+  .shopping-list-heading { align-items: stretch; flex-direction: column; gap: 1rem; }
+  .shopping-list-heading button { align-self: start; }
   .outlook-introduction, .outlook-days { grid-template-columns: 1fr; }
   .outlook-introduction { gap: 1rem; }
+  .outlook-regeneration { padding: 1rem 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .login-page { grid-template-columns: 1fr; background: var(--paper); }
   .login-page::before { display: none; }
 }
@@ -75,7 +79,7 @@
   .story-card > :not(.meal-figure, .detail-sheet) { grid-column: 1; }
   .meal-figure { grid-row: auto; min-height: 220px; margin-bottom: 1.2rem; }
   .food-log-card, .workout-log-card { padding: 1.2rem; }
-  .food-log-submit, .section-heading, .inventory-editor-actions, .purchase-actions, .history-entry { align-items: stretch; flex-direction: column; }
+  .food-log-submit, .section-heading, .inventory-detail-heading, .shopping-editor-heading, .inventory-editor-actions, .purchase-actions, .history-entry { align-items: stretch; flex-direction: column; }
   .food-log-submit small { max-width: none; }
   .workout-editor-grid, .actual-grid, .form-grid, .inventory-fields, .quantity-editor, .recipe-columns { grid-template-columns: 1fr; }
   .exercise-checkin { grid-template-columns: 1fr; gap: 0.8rem; }
@@ -86,9 +90,17 @@
   .component-list li { grid-template-columns: 1fr auto; }
   .component-list li small { grid-column: 1 / -1; }
   .detail-sheet { width: 100%; padding: 1.5rem; }
+  .inventory-tabs { gap: 1.25rem; }
+  .inventory-tabs button { flex: 1; min-width: 0; }
+  .inventory-row > summary, .shopping-row > summary { grid-template-columns: minmax(0, 1fr) 30px; gap: 0.35rem 0.8rem; padding: 0.85rem 0.15rem; }
+  .inventory-row-facts, .shopping-row-facts { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; overflow: visible; white-space: normal; }
+  .inventory-row-toggle, .shopping-row-toggle { grid-row: 1; grid-column: 2; }
+  .inventory-row-details, .shopping-row-details { padding-right: 0.75rem; padding-left: 0.75rem; }
   .seven-day-outlook > summary { align-items: flex-start; min-height: 110px; }
   .outlook-toggle b { display: none; }
   .outlook-session-heading, .outlook-exercises li, .seven-day-outlook > footer { align-items: flex-start; flex-direction: column; }
+  .outlook-preference-form { grid-template-columns: 1fr; }
+  .outlook-preference-form button { justify-self: start; }
   .outlook-exercises li span { text-align: left; }
 }
 

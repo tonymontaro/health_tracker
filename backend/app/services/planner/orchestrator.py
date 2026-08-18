@@ -10,7 +10,6 @@ from app.db.models import (
     Exercise,
     NutritionEntry,
     PlanningRun,
-    TwoWeekPlan,
     UserProfile,
     WorkoutEntry,
 )
@@ -27,7 +26,7 @@ from app.services.planner.openai_planner import (
     OpenAIPlanner,
     PlannerProviderError,
 )
-from app.services.planner.two_week import ensure_two_week_plan
+from app.services.planner.two_week import ensure_two_week_plan, latest_two_week_plan
 from app.services.recording_dates import current_recording_date
 
 
@@ -39,7 +38,7 @@ def generate_daily_plan(
     use_ai: bool = True,
 ) -> DailyPlan:
     existing = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == plan_date))
-    horizon = db.scalar(select(TwoWeekPlan).where(TwoWeekPlan.anchor_date == plan_date))
+    horizon = latest_two_week_plan(db, plan_date)
     if existing and (horizon or plan_date != current_recording_date(settings)):
         return existing
     profile = db.scalar(select(UserProfile))

@@ -28,6 +28,12 @@ When previous_plan is present, preserve its overlapping dates as closely as safe
 allow. The adaptation zone can change responsively. Keep days two through six stable unless new
 evidence creates a clear reason to alter them. Reconsider the provisional second week more freely.
 Explain material changes in adjustment_summary and each affected day's concise rationale.
+When manual_regeneration.requested is true, deliberately reconsider the visible week and return a
+materially refreshed plan where safe alternatives exist. Treat manual_regeneration.user_preference
+as high-priority preference content after safety, allergies, pain, equipment, schedule, catalog, and
+other hard constraints. Preserve day zero exactly because today's canonical daily plan has already
+been created. Apply the requested refresh and preference from day one onward. Never interpret the
+preference as permission to ignore hard constraints.
 
 Use only supplied active meal templates and exercise catalog entries. Use only exercises marked
 available_today, respect equipment availability, and never prescribe more than the profile maximum.

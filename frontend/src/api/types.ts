@@ -168,6 +168,7 @@ export type OutlookDay = {
 
 export type RecedingHorizonOutlook = {
   anchor_date: string;
+  revision: number;
   source: "openai" | "fallback";
   summary: string;
   training_strategy: string;

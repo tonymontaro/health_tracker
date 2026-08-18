@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import ProfileSnapshot, TwoWeekPlan, UserProfile
-from app.schemas.two_week_plan import TwoWeekPlanDocument
+from app.schemas.two_week_plan import TwoWeekPlanDocument, TwoWeekPlanProposal
 from app.services.planner.context import build_planner_context, build_profile_snapshot
 from app.services.planner.domain import validate_two_week_plan
 from app.services.planner.openai_planner import PlannerProviderError
@@ -20,6 +20,7 @@ from app.services.planner.two_week_fallback import build_fallback_two_week_plan
 def serialize_committed_outlook(plan: TwoWeekPlan) -> dict[str, Any]:
     return {
         "anchor_date": plan.anchor_date.isoformat(),
+        "revision": plan.revision,
         "source": plan.source,
         "summary": plan.plan_json["summary"],
         "training_strategy": plan.plan_json["training_strategy"],
@@ -28,6 +29,14 @@ def serialize_committed_outlook(plan: TwoWeekPlan) -> dict[str, Any]:
         "days": plan.plan_json["days"][:7],
         "generated_at": plan.created_at.isoformat(),
     }
+
+
+def latest_two_week_plan(db: Session, anchor_date: date) -> TwoWeekPlan | None:
+    return db.scalar(
+        select(TwoWeekPlan)
+        .where(TwoWeekPlan.anchor_date == anchor_date)
+        .order_by(TwoWeekPlan.revision.desc())
+    )
 
 
 def ensure_two_week_plan(
@@ -39,7 +48,7 @@ def ensure_two_week_plan(
     profile: UserProfile | None = None,
     snapshot: ProfileSnapshot | None = None,
 ) -> TwoWeekPlan:
-    existing = db.scalar(select(TwoWeekPlan).where(TwoWeekPlan.anchor_date == anchor_date))
+    existing = latest_two_week_plan(db, anchor_date)
     if existing is not None:
         return existing
     profile = profile or db.scalar(select(UserProfile))
@@ -49,8 +58,65 @@ def ensure_two_week_plan(
     previous = db.scalar(
         select(TwoWeekPlan)
         .where(TwoWeekPlan.anchor_date < anchor_date)
-        .order_by(TwoWeekPlan.anchor_date.desc())
+        .order_by(TwoWeekPlan.anchor_date.desc(), TwoWeekPlan.revision.desc())
     )
+    return _generate_two_week_plan(
+        db,
+        settings,
+        anchor_date,
+        profile=profile,
+        snapshot=snapshot,
+        previous=previous,
+        revision=1,
+        use_ai=use_ai,
+        regeneration_preference=None,
+    )
+
+
+def regenerate_two_week_plan(
+    db: Session,
+    settings: Settings,
+    anchor_date: date,
+    *,
+    preference: str | None = None,
+    use_ai: bool = True,
+) -> TwoWeekPlan:
+    profile = db.scalar(select(UserProfile))
+    if profile is None:
+        raise RuntimeError("Profile has not been seeded")
+    previous = latest_two_week_plan(db, anchor_date)
+    if previous is None:
+        previous = db.scalar(
+            select(TwoWeekPlan)
+            .where(TwoWeekPlan.anchor_date < anchor_date)
+            .order_by(TwoWeekPlan.anchor_date.desc(), TwoWeekPlan.revision.desc())
+        )
+    snapshot = build_profile_snapshot(db, profile, anchor_date)
+    return _generate_two_week_plan(
+        db,
+        settings,
+        anchor_date,
+        profile=profile,
+        snapshot=snapshot,
+        previous=previous,
+        revision=(previous.revision + 1 if previous and previous.anchor_date == anchor_date else 1),
+        use_ai=use_ai,
+        regeneration_preference=preference,
+    )
+
+
+def _generate_two_week_plan(
+    db: Session,
+    settings: Settings,
+    anchor_date: date,
+    *,
+    profile: UserProfile,
+    snapshot: ProfileSnapshot,
+    previous: TwoWeekPlan | None,
+    revision: int,
+    use_ai: bool,
+    regeneration_preference: str | None,
+) -> TwoWeekPlan:
     daily_context = build_planner_context(
         db,
         profile,
@@ -76,6 +142,14 @@ def ensure_two_week_plan(
         },
         "current_evidence_and_constraints": daily_context,
         "previous_plan": previous.plan_json if previous is not None else None,
+        "manual_regeneration": {
+            "requested": revision > 1 or regeneration_preference is not None,
+            "user_preference": regeneration_preference,
+            "instruction": (
+                "Create a materially refreshed but safe horizon. Treat the optional preference as "
+                "high priority after all hard constraints."
+            ),
+        },
         "stability_policy": {
             "adaptive_days": "Change responsively when recorded evidence warrants it.",
             "remaining_committed_days": (
@@ -113,6 +187,7 @@ def ensure_two_week_plan(
                 }
                 continue
             errors = validate_two_week_plan(db, candidate, profile, anchor_date)
+            errors.extend(_manual_regeneration_errors(candidate, previous, anchor_date, revision))
             validation["attempts"].append({"attempt": attempt, "errors": errors, "stage": "domain"})
             if not errors:
                 proposal = candidate
@@ -127,8 +202,18 @@ def ensure_two_week_plan(
             validation["openai_error"] = last_error
 
     if proposal is None:
-        proposal = build_fallback_two_week_plan(db, profile, anchor_date, previous)
+        proposal = build_fallback_two_week_plan(
+            db,
+            profile,
+            anchor_date,
+            previous,
+            preserve_previous=revision == 1,
+            variation_seed=revision - 1,
+        )
         fallback_errors = validate_two_week_plan(db, proposal, profile, anchor_date)
+        fallback_errors.extend(
+            _manual_regeneration_errors(proposal, previous, anchor_date, revision)
+        )
         validation["fallback_errors"] = fallback_errors
         if fallback_errors:
             raise RuntimeError(f"Deterministic two-week fallback is invalid: {fallback_errors}")
@@ -140,6 +225,7 @@ def ensure_two_week_plan(
     )
     row = TwoWeekPlan(
         anchor_date=anchor_date,
+        revision=revision,
         window_start=document.window_start,
         window_end=document.window_end,
         previous_plan_id=previous.id if previous is not None else None,
@@ -155,3 +241,22 @@ def ensure_two_week_plan(
     db.commit()
     db.refresh(row)
     return row
+
+
+def _manual_regeneration_errors(
+    proposal: TwoWeekPlanProposal,
+    previous: TwoWeekPlan | None,
+    anchor_date: date,
+    revision: int,
+) -> list[str]:
+    if revision <= 1 or previous is None or previous.anchor_date != anchor_date:
+        return []
+    prior_document = TwoWeekPlanDocument.model_validate(previous.plan_json)
+    prior_today = prior_document.days[0]
+    candidate_today = proposal.days[0]
+    errors: list[str] = []
+    if candidate_today.workout != prior_today.workout:
+        errors.append("Manual weekly regeneration must preserve today's workout guidance.")
+    if candidate_today.nutrition != prior_today.nutrition:
+        errors.append("Manual weekly regeneration must preserve today's nutrition guidance.")
+    return errors

@@ -843,17 +843,51 @@ function FolioRule({ label, number }: { label: string; number: string }) {
 }
 
 function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook; section: "food" | "exercise" }) {
+  const queryClient = useQueryClient();
+  const [preference, setPreference] = useState("");
+  const [showPreference, setShowPreference] = useState(false);
   const isFood = section === "food";
   const strategy = isFood ? outlook.nutrition_strategy : outlook.training_strategy;
+  const preferenceId = `outlook-preference-${section}`;
+  const regenerate = useMutation({
+    mutationFn: () => api<RecedingHorizonOutlook>("/today/outlook/regenerate", {
+      method: "POST",
+      body: JSON.stringify({ preference: preference.trim() || null }),
+    }),
+    onSuccess: async () => {
+      setPreference("");
+      setShowPreference(false);
+      await queryClient.invalidateQueries({ queryKey: ["today"] });
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    regenerate.mutate();
+  }
+  function togglePreference() {
+    if (showPreference) setPreference("");
+    setShowPreference(!showPreference);
+  }
   return <details className={`seven-day-outlook outlook-${section}`}>
     <summary>
       <div><p className="eyebrow">Receding horizon / committed week</p><h2>{isFood ? "The next seven days of meals" : "The next seven days of exercise"}</h2></div>
       <span className="outlook-toggle"><b>View plan</b><i aria-hidden="true">+</i></span>
     </summary>
     <div className="outlook-introduction">
-      <p>{strategy}</p>
-      <small>{outlook.adjustment_summary}</small>
+      <div className="outlook-copy"><p>{strategy}</p><small>{outlook.adjustment_summary}</small></div>
+      <div className="outlook-regeneration">
+        <small>Refreshes meals, fueling, and exercise together. Today's daily plan stays unchanged.</small>
+        <div className="regeneration-actions">
+          <button className="quiet small" type="button" disabled={regenerate.isPending} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate weekly plan"}</button>
+          <button className="text-button" type="button" aria-expanded={showPreference} aria-controls={preferenceId} disabled={regenerate.isPending} onClick={togglePreference}>{showPreference ? "Hide preference" : "Add preference"}</button>
+        </div>
+      </div>
     </div>
+    {showPreference && <form className="outlook-preference-form" id={preferenceId} onSubmit={submit}>
+      <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder={isFood ? "For example: more batch-friendly meals and simple pre-run fuel." : "For example: favor cycling this week and keep Saturday's strength session."} /></label>
+      <button className="primary small" disabled={regenerate.isPending}>{regenerate.isPending ? "Regenerating..." : "Regenerate with preference"}</button>
+    </form>}
+    {regenerate.error && <p className="error outlook-regeneration-error" role="alert">{regenerate.error.message}</p>}
     <div className="outlook-days">
       {outlook.days.map((day, index) => {
         const formatted = new Date(`${day.plan_date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
@@ -872,7 +906,7 @@ function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook
         </article>;
       })}
     </div>
-    <footer><span>7 days committed</span><span>14 days considered by AI</span><span>Updated daily</span></footer>
+    <footer><span>7 days committed</span><span>14 days considered by AI</span><span>Revision {outlook.revision}</span></footer>
   </details>;
 }
 

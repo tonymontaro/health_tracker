@@ -13,7 +13,6 @@ from app.db.models import (
     DailyWorkoutLog,
     NutritionEntry,
     StravaConnection,
-    TwoWeekPlan,
     UserProfile,
     WorkoutCoachFeedback,
     WorkoutEntry,
@@ -47,7 +46,11 @@ from app.services.nutrition_regeneration import (
     regenerate_nutrition,
 )
 from app.services.planner.orchestrator import generate_daily_plan
-from app.services.planner.two_week import serialize_committed_outlook
+from app.services.planner.two_week import (
+    latest_two_week_plan,
+    regenerate_two_week_plan,
+    serialize_committed_outlook,
+)
 from app.services.recording_dates import (
     available_recording_dates,
     current_recording_date,
@@ -170,7 +173,7 @@ def get_today(
     document = plan.current_plan_json
     profile = db.scalar(select(UserProfile))
     nutrition_status, workout_status = _status_maps(db, plan.plan_date)
-    horizon = db.scalar(select(TwoWeekPlan).where(TwoWeekPlan.anchor_date == plan.plan_date))
+    horizon = latest_two_week_plan(db, plan.plan_date)
     return {
         "date": plan.plan_date.isoformat(),
         "recording_dates": [item.isoformat() for item in available_recording_dates(settings)],
@@ -203,6 +206,23 @@ def get_today(
         "emergency_plate": EMERGENCY_PLATE,
         "outlook": (serialize_committed_outlook(horizon) if horizon is not None else None),
     }
+
+
+@router.post("/outlook/regenerate")
+def regenerate_outlook(
+    request: RegenerationRequest,
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    target = current_recording_date(settings)
+    plan = regenerate_two_week_plan(
+        db,
+        settings,
+        target,
+        preference=request.preference,
+    )
+    return serialize_committed_outlook(plan)
 
 
 @router.post("/workout/coach-feedback")

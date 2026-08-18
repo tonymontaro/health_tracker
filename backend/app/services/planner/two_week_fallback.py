@@ -28,6 +28,9 @@ def build_fallback_two_week_plan(
     profile: UserProfile,
     window_start: date,
     previous: TwoWeekPlan | None,
+    *,
+    preserve_previous: bool = True,
+    variation_seed: int = 0,
 ) -> TwoWeekPlanProposal:
     previous_document = (
         TwoWeekPlanDocument.model_validate(previous.plan_json) if previous is not None else None
@@ -48,7 +51,7 @@ def build_fallback_two_week_plan(
 
     for offset in range(14):
         plan_date = window_start + timedelta(days=offset)
-        prior_day = previous_days.get(plan_date)
+        prior_day = previous_days.get(plan_date) if preserve_previous or offset == 0 else None
         fallback = build_fallback_plan(db, plan_date)
         workout = prior_day.workout if prior_day else fallback.workout
         workout_adapted = False
@@ -58,12 +61,13 @@ def build_fallback_two_week_plan(
             else "Added at the edge of the rolling horizon using the established weekly pattern."
         )
 
-        if offset == 0 and evidence["recovery_cautioned"]:
+        if preserve_previous and offset == 0 and evidence["recovery_cautioned"]:
             workout = _recovery_workout()
             workout_adapted = True
             rationale = "Reduced to recovery after recorded pain or difficulty of 8 or higher."
         elif (
-            offset == 0
+            preserve_previous
+            and offset == 0
             and missed_workout is not None
             and _workout_allowed_on_date(db, profile, missed_workout, plan_date)
         ):
@@ -84,6 +88,7 @@ def build_fallback_two_week_plan(
                 workout,
                 meal_counts,
                 last_selected,
+                variation_seed,
             )
             last_selected = {name.casefold() for name in nutrition.meal_template_names}
 
@@ -113,7 +118,11 @@ def build_fallback_two_week_plan(
             "Rotate one or two exact main-meal templates daily and add simple fueling around the "
             "most demanding sessions."
         ),
-        adjustment_summary=_adjustment_summary(evidence, previous is not None),
+        adjustment_summary=(
+            "A fresh weekly revision was requested, so safe alternatives were reconsidered."
+            if not preserve_previous
+            else _adjustment_summary(evidence, previous is not None)
+        ),
         days=days,
         assumptions=[
             "Unrecorded sleep, soreness, appetite, and schedule changes are not inferred.",
@@ -200,6 +209,7 @@ def _nutrition_guidance(
     workout: WorkoutPlanProposal,
     meal_counts: Counter[str],
     last_selected: set[str],
+    variation_seed: int,
 ) -> TwoWeekNutritionGuidance:
     candidates = eligible_main_meal_templates(db, profile, plan_date)
     if not candidates:
@@ -212,12 +222,19 @@ def _nutrition_guidance(
         db, profile, plan_date
     )
 
-    def rank(template: MealTemplate) -> tuple[int, int, int, str]:
+    ordered_names = sorted(template.name for template in candidates)
+    rotated_position = {
+        name: (index - variation_seed) % len(ordered_names)
+        for index, name in enumerate(ordered_names)
+    }
+
+    def rank(template: MealTemplate) -> tuple[int, int, int, int, str]:
         key = template.name.casefold()
         return (
             1 if key in last_selected else 0,
             meal_counts[key],
             template.effort_score,
+            rotated_position[template.name],
             template.name,
         )
 

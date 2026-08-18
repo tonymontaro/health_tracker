@@ -249,7 +249,7 @@ def build_planner_context(
                 TwoWeekPlan.window_start <= plan_date,
                 TwoWeekPlan.window_end >= plan_date,
             )
-            .order_by(TwoWeekPlan.anchor_date.desc())
+            .order_by(TwoWeekPlan.anchor_date.desc(), TwoWeekPlan.revision.desc())
         )
         if horizon is not None:
             days = horizon.plan_json.get("days", [])

@@ -1,14 +1,25 @@
+import asyncio
 from datetime import date, timedelta
 
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings
-from app.db.models import TwoWeekPlan, WorkoutEntry
+from app.core.config import Settings, get_settings
+from app.core.security import token_digest
+from app.db.models import ApiToken, TwoWeekPlan, WorkoutEntry
+from app.db.session import get_db
+from app.main import app
 from app.schemas.two_week_plan import TwoWeekPlanDocument
 from app.services.planner.orchestrator import generate_daily_plan
-from app.services.planner.two_week import ensure_two_week_plan, serialize_committed_outlook
+from app.services.planner.two_week import (
+    ensure_two_week_plan,
+    latest_two_week_plan,
+    regenerate_two_week_plan,
+    serialize_committed_outlook,
+)
 from app.services.planner.two_week_fallback import build_fallback_two_week_plan
+from app.services.recording_dates import current_recording_date
 
 TARGET = date(2026, 8, 10)
 
@@ -71,6 +82,107 @@ def test_daily_revision_preserves_overlapping_committed_day_without_new_evidence
     assert second.previous_plan_id == first.id
     assert second_document.days[0].workout == first_document.days[1].workout
     assert second_document.days[0].nutrition == first_document.days[1].nutrition
+
+
+def test_manual_regeneration_creates_a_new_revision_and_preserves_the_prior_one(
+    db: Session, settings: Settings, seeded
+) -> None:
+    first = ensure_two_week_plan(db, settings, TARGET, use_ai=False)
+    second = regenerate_two_week_plan(
+        db,
+        settings,
+        TARGET,
+        preference="Favor batch-friendly meals",
+        use_ai=False,
+    )
+
+    assert first.revision == 1
+    assert second.revision == 2
+    assert second.previous_plan_id == first.id
+    assert db.query(TwoWeekPlan).count() == 2
+    latest = latest_two_week_plan(db, TARGET)
+    assert latest is not None
+    assert latest.id == second.id
+    first_document = TwoWeekPlanDocument.model_validate(first.plan_json)
+    second_document = TwoWeekPlanDocument.model_validate(second.plan_json)
+    assert second_document.days[0].workout == first_document.days[0].workout
+    assert second_document.days[0].nutrition == first_document.days[0].nutrition
+    assert any(
+        revised.nutrition != original.nutrition
+        for original, revised in zip(
+            first_document.days[1:7], second_document.days[1:7], strict=True
+        )
+    )
+    assert second.context_snapshot_json["manual_regeneration"] == {
+        "requested": True,
+        "user_preference": "Favor batch-friendly meals",
+        "instruction": (
+            "Create a materially refreshed but safe horizon. Treat the optional preference as "
+            "high priority after all hard constraints."
+        ),
+    }
+    assert serialize_committed_outlook(second)["revision"] == 2
+
+    following = ensure_two_week_plan(db, settings, TARGET + timedelta(days=1), use_ai=False)
+    assert following.previous_plan_id == second.id
+
+
+def test_regenerate_outlook_endpoint_requires_auth_and_returns_latest_revision(
+    db: Session, seeded
+) -> None:
+    api_settings = Settings(
+        DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
+        OPENAI_API_KEY=None,
+        SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
+    )
+    target = current_recording_date(api_settings)
+    generate_daily_plan(db, api_settings, target, use_ai=False)
+    raw_token = "test-outlook-regeneration-token"
+    db.add(
+        ApiToken(
+            account_id=seeded.account_id,
+            name="outlook regeneration test",
+            token_hash=token_digest(raw_token, api_settings),
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_settings] = lambda: api_settings
+
+    async def make_requests():
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            unauthenticated = await client.post(
+                "/api/v1/today/outlook/regenerate",
+                json={"preference": "More cycling"},
+            )
+            authenticated = await client.post(
+                "/api/v1/today/outlook/regenerate",
+                headers={"Authorization": f"Bearer {raw_token}"},
+                json={"preference": "More cycling"},
+            )
+            today = await client.get(
+                "/api/v1/today",
+                headers={"Authorization": f"Bearer {raw_token}"},
+            )
+        return unauthenticated, authenticated, today
+
+    try:
+        unauthenticated, authenticated, today = asyncio.run(make_requests())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert unauthenticated.status_code == 401
+    assert authenticated.status_code == 200
+    assert authenticated.json()["revision"] == 2
+    assert today.status_code == 200
+    assert today.json()["outlook"]["revision"] == 2
+    latest = latest_two_week_plan(db, target)
+    assert latest is not None
+    assert latest.context_snapshot_json["manual_regeneration"]["user_preference"] == (
+        "More cycling"
+    )
 
 
 def test_missed_session_moves_forward_inside_adaptation_zone(

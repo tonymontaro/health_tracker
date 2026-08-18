@@ -201,9 +201,16 @@ class PlanningRun(UUIDPrimaryKeyMixin, Base):
 
 class TwoWeekPlan(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "two_week_plan"
-    __table_args__ = (UniqueConstraint("anchor_date"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "anchor_date",
+            "revision",
+            name="uq_two_week_plan_anchor_date_revision",
+        ),
+    )
 
     anchor_date: Mapped[date] = mapped_column(Date, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
     window_start: Mapped[date] = mapped_column(Date, index=True)
     window_end: Mapped[date] = mapped_column(Date, index=True)
     previous_plan_id: Mapped[UUID | None] = mapped_column(

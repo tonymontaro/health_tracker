@@ -63,8 +63,10 @@ The AI considers fourteen consecutive days so that training load, recovery, meal
 The first seven days contain exact meal-template selections, fueling guidance, and measurable workout prescriptions and are the only horizon days exposed in the UI.
 The second week remains provisional and is supplied to later planner runs as strategic context.
 
-One immutable `two_week_plan` revision is stored per Zurich-local anchor date.
-Each revision points to the preceding revision and preserves overlapping committed dates unless new evidence creates a clear reason to change them.
+One or more immutable, numbered `two_week_plan` revisions can be stored for a Zurich-local anchor date.
+Automatic planning creates revision one, while explicit regeneration creates a new revision and retains the preceding version for audit.
+Each revision points to the preceding revision and preserves overlapping committed dates unless new evidence or an explicit regeneration preference creates a clear reason to change them.
+Manual regeneration preserves day zero because today's canonical daily plan is already fixed, then refreshes tomorrow onward.
 Today and tomorrow are the adaptation zone.
 Completed or skipped training, recorded difficulty, pain or soreness notes, nutrition adherence, and known schedule constraints can change the near-term prescription.
 Unrecorded sleep, appetite, soreness, fatigue, or schedule changes are never invented.
@@ -103,7 +105,8 @@ Provider-side response storage is disabled.
 
 ## Canonical plan and history
 
-There is one immutable `two_week_plan` revision per Zurich-local anchor date.
+There is at least one immutable `two_week_plan` revision per planned Zurich-local anchor date.
+The latest revision is active, while earlier revisions remain available for audit.
 Only its first seven days are committed and user-facing, while all fourteen days remain available to subsequent planning runs.
 There is one `daily_plan` row per Zurich-local date.
 `original_plan_json` is immutable after creation.

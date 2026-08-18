@@ -11,6 +11,7 @@ Meal recommendations avoid consecutive-day template repeats when alternatives ex
 Inventory can improve convenience and reduce waste, but missing ingredients do not prevent a meal from being recommended.
 The Today page also accepts optional high-priority preferences when regenerating meals or exercise.
 Collapsed seven-day outlooks appear at the bottom of the Food and Exercise pages.
+Each outlook can be regenerated with an optional preference, creating an auditable new revision while leaving today's canonical daily plan unchanged.
 
 ## Architecture
 
