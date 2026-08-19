@@ -3,6 +3,8 @@
 Health Autopilot is a single-user personal health and hybrid training planner.
 It produces one low-friction daily plan with one or two main meals, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
 It also maintains a rolling fourteen-day AI planning horizon, commits the next seven days for review, and adapts today and tomorrow from recorded outcomes.
+An optional dated training-plan CSV can be uploaded in Settings and becomes high-priority guidance for workout, recovery, meal, and fueling recommendations.
+Uploading another CSV replaces the active guide without rewriting existing daily-plan history.
 
 The application preserves what was recommended, what actually happened, what was assumed at reconciliation, and every later correction.
 Future recommendations use corrected history without rewriting old plans.
@@ -130,6 +132,20 @@ The active target can be edited in Settings or set from the command line:
 ```bash
 .venv/bin/health-autopilot set-goal --text "Race, distance, elevation, date, and target time"
 ```
+
+## Import a training plan guide
+
+Settings accepts a CSV containing `Date` and `Workout` columns.
+Dates use `YYYY-MM-DD`, workout cells may contain multiple lines, and rest days should contain an explicit value such as `Rest.`.
+The imported rows are future guidance rather than completed workout history.
+The raw `Workout` value is supplied directly to the AI as high-priority advisory input rather than converted into a fixed prescription.
+The AI decides the final daily recommendation from the guide, recorded evidence, the exercise catalog, and hard safety constraints, and it uses nearby guide workload for recovery, nutrition, and fueling decisions.
+
+The fourteen-day outlook stores strategic workout intent rather than complete future exercise prescriptions.
+Daily planning receives today's strategy, a three-day lookahead, eligible current-day catalogs, and compact recent evidence instead of the complete planning dataset.
+
+Only one guide is active.
+Uploading another CSV replaces it, retains already-created daily plans, and causes the current rolling horizon to refresh when recommendations next load.
 
 ## Run the backend
 
@@ -358,7 +374,7 @@ If OpenAI is unavailable or validation fails, no workout state changes.
 - One canonical plan exists per Zurich-local date.
 - One or two main meals are allowed.
 - Fruit and optional snacks do not count as main meals.
-- At most three exercises are allowed.
+- At most four exercises are allowed.
 - Gym-only exercises are allowed only on Saturday and Sunday.
 - Thursday is rest or very light recovery movement.
 - Every active workout has numeric, reproducible targets.

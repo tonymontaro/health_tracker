@@ -81,7 +81,9 @@ def test_regeneration_uses_refreshed_history_and_preserves_nutrition(
     assert run.context_snapshot_json["last_run_outside_recent_sessions"] is None
     assert "recent_training" not in run.context_snapshot_json["profile_snapshot"]
     assert "recent_nutrition" not in run.context_snapshot_json["profile_snapshot"]
-    assert "recent_meals" not in run.context_snapshot_json["nutrition_summary_14d"]
+    assert "nutrition_summary_14d" not in run.context_snapshot_json
+    assert "active_meal_templates" not in run.context_snapshot_json
+    assert "current_inventory" not in run.context_snapshot_json
     assert "comparable_strength_sessions" not in run.context_snapshot_json
     assert "comparable_run_sessions" not in run.context_snapshot_json
     assert "comparable_bike_sessions" not in run.context_snapshot_json

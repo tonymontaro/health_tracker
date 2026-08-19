@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import ChatMessage, DailyPlan, UserProfile
 from app.schemas.api import QAResponse
-from app.services.planner.context import build_planner_context
+from app.services.planner.context import build_qa_context
 
 QA_SYSTEM_PROMPT = """Answer questions about today's personal health and hybrid training plan.
 Use only the supplied profile, plan, history, inventory, and constraints.
@@ -47,7 +47,7 @@ def ask_about_plan(
         snapshot = db.get(ProfileSnapshot, plan.profile_snapshot_id)
         if snapshot is None:
             raise RuntimeError("Plan snapshot is missing")
-        context = build_planner_context(db, profile, snapshot, target_date)
+        context = build_qa_context(db, profile, snapshot, target_date)
         client = OpenAI(
             api_key=settings.openai_key_value,
             timeout=120,

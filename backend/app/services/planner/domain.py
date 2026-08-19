@@ -20,16 +20,20 @@ def _measurable(exercise: ExerciseProposal) -> bool:
         return bool(
             exercise.load_kg is not None
             and exercise.sets
-            and exercise.reps_per_set
-            and len(exercise.reps_per_set) == exercise.sets
+            and (
+                (exercise.reps_per_set and len(exercise.reps_per_set) == exercise.sets)
+                or exercise.duration_seconds
+            )
             and exercise.rest_seconds is not None
         )
     if exercise.exercise_type.value == "bodyweight":
         return bool(
             exercise.external_load_kg is not None
             and exercise.sets
-            and exercise.reps_per_set
-            and len(exercise.reps_per_set) == exercise.sets
+            and (
+                (exercise.reps_per_set and len(exercise.reps_per_set) == exercise.sets)
+                or exercise.duration_seconds
+            )
             and exercise.rest_seconds is not None
         )
     if exercise.exercise_type.value == "run":
@@ -175,10 +179,6 @@ def validate_two_week_plan(
     if proposal.window_start != plan_date:
         errors.append("The receding horizon must start on the planning date.")
 
-    exercise_catalog = {
-        exercise.name.casefold(): exercise
-        for exercise in db.scalars(select(Exercise).where(Exercise.active.is_(True)))
-    }
     previous_entries = list(
         db.scalars(
             select(WorkoutEntry).where(WorkoutEntry.entry_date == plan_date - timedelta(days=1))
@@ -189,57 +189,35 @@ def validate_two_week_plan(
         or (entry.status in {"completed", "partial"} and (entry.difficulty_1_to_10 or 0) >= 8)
         for entry in previous_entries
     )
+    gym_access_available = (
+        db.scalar(
+            select(Equipment.id).where(
+                func.lower(Equipment.name) == "commercial gym access",
+                Equipment.available.is_(True),
+            )
+        )
+        is not None
+    )
 
     for day in proposal.days:
         weekday = day.plan_date.strftime("%A")
         workout = day.workout
-        if len(workout.exercises) > profile.max_exercises_per_day:
-            errors.append(f"{day.plan_date}: workout exceeds the exercise limit.")
-        if weekday == "Thursday":
-            if workout.intensity not in {"rest", "very_light", "light"}:
-                errors.append(f"{day.plan_date}: Thursday cannot contain hard training.")
-            if any(item.exercise_type.value != "recovery" for item in workout.exercises):
-                errors.append(f"{day.plan_date}: Thursday may only contain recovery movement.")
-        seen_exercises: set[str] = set()
-        for prescription in workout.exercises:
-            key = prescription.exercise_name.casefold()
-            catalog_item = exercise_catalog.get(key)
-            if catalog_item is None:
-                errors.append(f"{day.plan_date}: unknown exercise {prescription.exercise_name}.")
-                continue
-            if key in seen_exercises:
-                errors.append(f"{day.plan_date}: duplicate exercise {prescription.exercise_name}.")
-            seen_exercises.add(key)
-            if catalog_item.gym_only and (
-                weekday not in {"Saturday", "Sunday"} or weekday not in profile.gym_days
-            ):
-                errors.append(
-                    f"{day.plan_date}: gym-only exercise {prescription.exercise_name} "
-                    f"is not allowed on {weekday}."
-                )
-            if not exercise_equipment_available(db, catalog_item):
-                errors.append(
-                    f"{day.plan_date}: equipment is unavailable for {prescription.exercise_name}."
-                )
-            if any(excluded.casefold() in key for excluded in profile.excluded_exercises):
-                errors.append(f"{day.plan_date}: excluded exercise {prescription.exercise_name}.")
-            if not _measurable(prescription):
-                errors.append(
-                    f"{day.plan_date}: {prescription.exercise_name} lacks a measurable workload."
-                )
-            previous = db.scalar(
-                select(WorkoutEntry)
-                .where(func.lower(WorkoutEntry.exercise_name) == key)
-                .order_by(WorkoutEntry.entry_date.desc())
-            )
-            if (
-                previous
-                and previous.pain_flag
-                and _workload_increased(previous.prescription_json, prescription)
-            ):
-                errors.append(
-                    f"{day.plan_date}: pain prevents progression of {prescription.exercise_name}."
-                )
+        if weekday == "Thursday" and (
+            workout.kind not in {"rest", "recovery"}
+            or workout.intensity
+            not in {
+                "rest",
+                "very_light",
+                "light",
+            }
+        ):
+            errors.append(f"{day.plan_date}: Thursday cannot contain hard training.")
+        if workout.requires_gym and (
+            not gym_access_available
+            or weekday not in {"Saturday", "Sunday"}
+            or weekday not in profile.gym_days
+        ):
+            errors.append(f"{day.plan_date}: gym training is unavailable on {weekday}.")
 
         if day.nutrition.expected_main_meals > profile.max_main_meals_per_day:
             errors.append(f"{day.plan_date}: nutrition exceeds the main-meal limit.")

@@ -20,6 +20,8 @@ PostgreSQL history
        v
 Derived metrics and ProfileSnapshot
        |
+       +<-- active dated training-plan guide
+       |
        v
 RecedingHorizonContext + previous horizon revision
        |
@@ -36,11 +38,11 @@ Pydantic and domain validation
 Immutable TwoWeekPlan revision for this anchor date
        |
        +-- days 0-1: adaptive zone
-       +-- days 0-6: committed user-facing plan
+       +-- days 0-6: committed user-facing strategy
        +-- days 7-13: provisional AI planning horizon
        |
        v
-Daily PlannerContext with the complete horizon
+Task-specific Daily PlannerContext with today's strategy and three-day lookahead
        |
        v
 OpenAI structured daily proposal
@@ -60,8 +62,9 @@ The deterministic fallback uses the same plan schema and validators.
 
 Planning uses a receding horizon.
 The AI considers fourteen consecutive days so that training load, recovery, meal variety, preparation, and fueling are not chosen in isolation.
-The first seven days contain exact meal-template selections, fueling guidance, and measurable workout prescriptions and are the only horizon days exposed in the UI.
-The second week remains provisional and is supplied to later planner runs as strategic context.
+The first seven days contain strategic workout intent, exact meal-template selections, and fueling guidance and are the only horizon days exposed in the UI.
+The second week remains provisional strategic context.
+The daily planner, rather than the horizon planner, creates the final measurable workout prescription and complete recipes.
 
 One or more immutable, numbered `two_week_plan` revisions can be stored for a Zurich-local anchor date.
 Automatic planning creates revision one, while explicit regeneration creates a new revision and retains the preceding version for audit.
@@ -72,8 +75,29 @@ Completed or skipped training, recorded difficulty, pain or soreness notes, nutr
 Unrecorded sleep, appetite, soreness, fatigue, or schedule changes are never invented.
 
 The rolling horizon is generated or refreshed before the daily plan.
-The complete fourteen-day document and the matching current-day guidance are then included in the daily planner context.
-The daily plan may deviate when recent evidence or a hard constraint warrants it, but must explain material deviations and still pass the existing safety and catalog validators.
+The daily planner receives only the matching strategic day, the next three strategic days, and compact strategy summaries rather than the complete horizon.
+The daily plan treats the horizon and imported CSV as guidance, decides the final recommendation from all current evidence, and still passes the existing safety and catalog validators.
+
+Planner context is task-specific.
+Horizon planning receives compact catalog metadata and no recipes, inventory, shopping state, or prior full daily plan.
+Daily planning receives eligible current-day catalogs, a compact summary of yesterday, and only the nearby horizon.
+Workout regeneration excludes nutrition catalogs and inventory, while nutrition regeneration excludes workout history and the exercise catalog.
+
+## Imported training-plan guide
+
+Settings accepts one CSV with `Date` and `Workout` columns as the active externally supplied training guide.
+The application stores the original CSV, its SHA-256 source revision, and normalized dated rows in `training_plan_guide`.
+Uploading another CSV updates that single profile-owned row, so code changes are not required when the external plan changes.
+
+The guide is future intent and never enters workout history as completed activity.
+Horizon context contains the current fourteen-day guide window and the next benchmark or race beyond it.
+Daily context contains today's raw `Workout` value, the next three guide days, and the next later benchmark or race.
+The AI treats those rows as high-priority advisory training intent after pain, medical, equipment, schedule, exercise-catalog, and other hard constraints, and it remains responsible for deciding the final daily plan.
+It uses the guide workload to shape recovery, meal selection, and fueling, and it must explain material deviations.
+
+Two-week horizon context records the guide source revision.
+When the active CSV changes, the next current-day planning request creates a new immutable horizon revision.
+An already-created canonical daily plan remains unchanged, while tomorrow onward can use the replacement guide.
 
 ## Meal selection policy
 

@@ -82,7 +82,7 @@ class UserProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_target_goal: Mapped[str | None] = mapped_column(Text)
     max_main_meals_per_day: Mapped[int] = mapped_column(Integer, default=2)
     preferred_main_meals_per_day: Mapped[int] = mapped_column(Integer, default=2)
-    max_exercises_per_day: Mapped[int] = mapped_column(Integer, default=3)
+    max_exercises_per_day: Mapped[int] = mapped_column(Integer, default=4)
     gym_days: Mapped[list[str]] = mapped_column(JSONB, default=list)
     office_days: Mapped[list[str]] = mapped_column(JSONB, default=list)
     excluded_exercises: Mapped[list[str]] = mapped_column(JSONB, default=list)
@@ -92,6 +92,21 @@ class UserProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     strength_capacity_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     endurance_capacity_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     kitchen_equipment_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+
+class TrainingPlanGuide(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "training_plan_guide"
+
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user_profile.id", ondelete="CASCADE"), unique=True
+    )
+    name: Mapped[str] = mapped_column(String(160))
+    source_filename: Mapped[str] = mapped_column(String(255))
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    start_date: Mapped[date] = mapped_column(Date, index=True)
+    end_date: Mapped[date] = mapped_column(Date, index=True)
+    guide_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    raw_csv_text: Mapped[str] = mapped_column(Text)
 
 
 class Equipment(UUIDPrimaryKeyMixin, TimestampMixin, Base):

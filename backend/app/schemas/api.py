@@ -69,7 +69,7 @@ class ProfileUpdate(BaseModel):
     current_target_goal: str | None = Field(default=None, max_length=4000)
     max_main_meals_per_day: int | None = Field(default=None, ge=1, le=2)
     preferred_main_meals_per_day: int | None = Field(default=None, ge=1, le=2)
-    max_exercises_per_day: int | None = Field(default=None, ge=1, le=3)
+    max_exercises_per_day: int | None = Field(default=None, ge=1, le=4)
     gym_days: list[str] | None = None
     office_days: list[str] | None = None
     excluded_exercises: list[str] | None = None
@@ -98,6 +98,31 @@ class ProfileUpdate(BaseModel):
         if unknown:
             raise ValueError("Unknown weekdays: " + ", ".join(unknown))
         return list(dict.fromkeys(value))
+
+
+class TrainingPlanGuideUpload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(min_length=1, max_length=255)
+    csv_text: str = Field(min_length=1, max_length=500_000)
+
+
+class TrainingPlanGuideDayResponse(BaseModel):
+    plan_date: date
+    workout: str
+
+
+class TrainingPlanGuideResponse(BaseModel):
+    id: UUID
+    name: str
+    source_filename: str
+    source_sha256: str
+    start_date: date
+    end_date: date
+    row_count: int
+    days: list[TrainingPlanGuideDayResponse]
+    created_at: datetime
+    updated_at: datetime
 
 
 class EquipmentResponse(BaseModel):

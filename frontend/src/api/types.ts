@@ -152,8 +152,8 @@ export type OutlookDay = {
     kind: string;
     intensity: string;
     title: string;
-    exercises: Array<Omit<Exercise, "recommendation_id">>;
     expected_duration_minutes: number;
+    requires_gym: boolean;
     summary: string;
   };
   nutrition: {
@@ -253,6 +253,19 @@ export type Profile = {
   strength_capacity_json: Record<string, unknown>;
   endurance_capacity_json: Record<string, unknown>;
   kitchen_equipment_json: Array<{ name: string; owned: boolean | null }>;
+};
+
+export type TrainingPlanGuide = {
+  id: string;
+  name: string;
+  source_filename: string;
+  source_sha256: string;
+  start_date: string;
+  end_date: string;
+  row_count: number;
+  days: Array<{ plan_date: string; workout: string }>;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Equipment = {

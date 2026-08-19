@@ -132,7 +132,8 @@ When the owner-host tunnel is active:
 - Re-analysis replaces only entries owned by the prior diary; preserve Strava imports and later History corrections.
 - Pain blocks automatic progression.
 - Thursday is rest or very-light recovery; rest is a valid workout-plan option and contains no exercises.
-- Active workouts require measurable targets. At most three exercises and one or two main meals are allowed.
+- Active workouts require measurable targets. At most four exercises and one or two main meals are allowed.
+- The optional Settings training-plan CSV is the active external planning guide. A replacement upload supersedes the prior guide without rewriting existing daily-plan history.
 - Raw Strava location data must never enter AI context.
 - OpenAI calls use `store=false`; keep provider models configurable through settings rather than scattering model names.
 

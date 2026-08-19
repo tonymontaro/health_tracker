@@ -274,6 +274,20 @@
 .rule-list > div { display: flex; justify-content: space-between; gap: 1rem; }
 .token-output { display: block; margin-top: 1rem; padding: 0.8rem; border: 1px solid var(--red); word-break: break-all; background: var(--paper-light); }
 .integration-panel { display: grid; gap: 0.7rem; }
+.training-plan-guide-card { display: grid; gap: 1rem; margin-top: 3.5rem; padding: 2rem 0; }
+.training-plan-guide-card > h2, .training-plan-guide-card > p { margin-bottom: 0; }
+.training-guide-current { display: grid; gap: 1rem; }
+.training-guide-current .integration-panel { padding: 1rem; border: 1px solid var(--line); background: var(--paper-light); }
+.training-guide-current .integration-panel p, .training-guide-current .integration-panel small { margin: 0; }
+.training-guide-details { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.training-guide-details > summary { min-height: 48px; padding: 0.75rem 0; font: 700 var(--fn-type-label) var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.training-guide-days { max-height: 32rem; overflow: auto; border-top: 1px solid var(--line); }
+.training-guide-days article { display: grid; grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1.65fr); gap: 1.5rem; padding: 0.9rem 0; border-bottom: 1px solid var(--line-light); }
+.training-guide-days article:last-child { border-bottom: 0; }
+.training-guide-days time { color: var(--red-dark); font: 700 var(--fn-type-label) var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.training-guide-days p { margin: 0; white-space: pre-line; }
+.training-guide-upload { display: grid; justify-items: start; gap: 0.8rem; }
+.training-guide-upload label { width: min(100%, 38rem); }
 .account-security-card { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr); gap: 4rem; margin-top: 3.5rem; padding: 2rem 0; }
 .account-security-summary { display: grid; align-content: start; justify-items: start; gap: 0.7rem; }
 .account-security-summary h2, .account-security-summary p { margin-bottom: 0; }

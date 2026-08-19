@@ -10,7 +10,7 @@ from app.core.security import token_digest
 from app.db.models import ApiToken, TwoWeekPlan, WorkoutEntry
 from app.db.session import get_db
 from app.main import app
-from app.schemas.two_week_plan import TwoWeekPlanDocument
+from app.schemas.two_week_plan import TwoWeekPlanDocument, parse_two_week_plan_document
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.planner.two_week import (
     ensure_two_week_plan,
@@ -41,7 +41,11 @@ def test_fallback_builds_fourteen_day_horizon_with_seven_committed_days(
         *(["adaptive"] * 2),
         *(["stable"] * 12),
     ]
-    assert all(day.workout.kind == "rest" or day.workout.exercises for day in document.days[:7])
+    assert all(
+        day.workout.kind == "rest" or day.workout.expected_duration_minutes > 0
+        for day in document.days[:7]
+    )
+    assert all("exercises" not in day["workout"] for day in row.plan_json["days"])
     assert all(day.nutrition.meal_template_names for day in document.days[:7])
     thursday = next(day for day in document.days if day.plan_date.strftime("%A") == "Thursday")
     assert thursday.nutrition.meal_template_names == ["Thursday flexible colleague meal"]
@@ -52,7 +56,7 @@ def test_fallback_builds_fourteen_day_horizon_with_seven_committed_days(
     assert db.query(TwoWeekPlan).count() == 1
 
 
-def test_daily_fallback_uses_the_committed_horizon_prescription(
+def test_daily_fallback_expands_the_committed_horizon_strategy(
     db: Session, settings: Settings, seeded
 ) -> None:
     daily = generate_daily_plan(db, settings, TARGET, use_ai=False)
@@ -60,10 +64,11 @@ def test_daily_fallback_uses_the_committed_horizon_prescription(
     assert horizon is not None
     horizon_day = horizon.plan_json["days"][0]
 
-    daily_workout = dict(daily.current_plan_json["workout"])
-    for exercise in daily_workout["exercises"]:
-        exercise.pop("recommendation_id")
-    assert daily_workout == horizon_day["workout"]
+    daily_workout = daily.current_plan_json["workout"]
+    for field in ("kind", "intensity", "title", "expected_duration_minutes", "summary"):
+        assert daily_workout[field] == horizon_day["workout"][field]
+    assert daily_workout["exercises"]
+    assert "exercises" not in horizon_day["workout"]
     daily_meals = [daily.current_plan_json["nutrition"]["meal_1"]["template_name"]]
     if daily.current_plan_json["nutrition"]["meal_2"]:
         daily_meals.append(daily.current_plan_json["nutrition"]["meal_2"]["template_name"])
@@ -281,3 +286,21 @@ def test_ai_candidate_is_validated_and_persisted(db: Session, monkeypatch, seede
     assert calls == 1
     assert row.source == "openai"
     assert row.model == ai_settings.openai_planner_model
+
+
+def test_legacy_detailed_horizon_is_read_as_strategic_context(
+    db: Session, settings: Settings, seeded
+) -> None:
+    row = ensure_two_week_plan(db, settings, TARGET, use_ai=False)
+    legacy = dict(row.plan_json)
+    legacy["days"] = [dict(day) for day in row.plan_json["days"]]
+    for day in legacy["days"]:
+        workout = dict(day["workout"])
+        workout.pop("requires_gym")
+        workout["exercises"] = [{"exercise_name": "Legacy detailed movement"}]
+        day["workout"] = workout
+
+    document = parse_two_week_plan_document(legacy)
+
+    assert len(document.days) == 14
+    assert all("exercises" not in day.workout.model_dump() for day in document.days)

@@ -39,6 +39,9 @@ function exerciseText(exercise: Omit<Exercise, "recommendation_id">): string {
     return `${minutes} min${power}`;
   }
   const load = exercise.exercise_type === "bodyweight" ? exercise.external_load_kg : exercise.load_kg;
+  if (!exercise.reps_per_set?.length && exercise.duration_seconds) {
+    return `${load ?? 0} kg · ${Math.round(exercise.duration_seconds / 60)} min timed · ${exercise.rest_seconds}s rest`;
+  }
   return `${load ?? 0} kg · ${exercise.reps_per_set?.join(" / ")} reps · ${exercise.rest_seconds}s rest`;
 }
 
@@ -525,10 +528,15 @@ function WorkoutCard({
         const first = values[`${exercise.recommendation_id}:first`] ?? "";
         const second = values[`${exercise.recommendation_id}:second`] ?? "";
         if (exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight") {
-          results[exercise.recommendation_id] = {
+          const result: Record<string, unknown> = {
             load_kg: Number(first || exercise.load_kg || exercise.external_load_kg || 0),
-            reps_per_set: (second || exercise.reps_per_set?.join(",") || "").split(",").map(Number),
           };
+          if (exercise.reps_per_set?.length) {
+            result.reps_per_set = (second || exercise.reps_per_set.join(",")).split(",").map(Number);
+          } else {
+            result.duration_seconds = Math.round(Number(second || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60);
+          }
+          results[exercise.recommendation_id] = result;
         } else if (exercise.exercise_type === "run") {
           results[exercise.recommendation_id] = {
             distance_km: Number(first || exercise.distance_km),
@@ -582,6 +590,7 @@ function WorkoutCard({
         const status = today.workout_status[exercise.recommendation_id]?.status ?? "planned";
         const recorded = today.workout_status[exercise.recommendation_id];
         const strength = exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight";
+        const timedStrength = strength && !exercise.reps_per_set?.length && Boolean(exercise.duration_seconds);
         const hasEvaluation = recorded && (recorded.difficulty_1_to_10 != null || recorded.pain_flag);
         const selectedDifficulty = difficulties[exercise.recommendation_id] ?? recorded?.difficulty_1_to_10 ?? 5;
         const difficultyProgress = `${((selectedDifficulty - 1) / 9) * 100}%`;
@@ -595,7 +604,7 @@ function WorkoutCard({
             {isRecording && recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
             {isRecording && <div className="actual-grid">
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
-              <label>{strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
+              <label>{timedStrength ? "Actual timed work, minutes" : strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={timedStrength ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
             </div>}
             {!isRecording && <div className="exercise-checkin">
               <label className="exercise-difficulty-control" htmlFor={`difficulty-${exercise.recommendation_id}`}>
@@ -899,8 +908,8 @@ function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook
             {day.nutrition.fueling_recommendations.length > 0 && <ul>{day.nutrition.fueling_recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
             {day.nutrition.prep_note && <small className="outlook-prep">Prep: {day.nutrition.prep_note}</small>}
           </> : <>
-            <div className="outlook-session-heading"><h3>{day.workout.title}</h3><span>{day.workout.expected_duration_minutes} min · {day.workout.intensity.replaceAll("_", " ")}</span></div>
-            {day.workout.exercises.length > 0 ? <ul className="outlook-exercises">{day.workout.exercises.map((exercise) => <li key={exercise.exercise_name}><strong>{exercise.exercise_name}</strong><span>{exerciseText(exercise)}</span></li>)}</ul> : <p>{day.workout.summary}</p>}
+            <div className="outlook-session-heading"><h3>{day.workout.title}</h3><span>{day.workout.expected_duration_minutes} min · {day.workout.intensity.replaceAll("_", " ")}{day.workout.requires_gym ? " · gym" : ""}</span></div>
+            <p>{day.workout.summary}</p>
           </>}
           <p className="outlook-rationale">{day.rationale}</p>
         </article>;

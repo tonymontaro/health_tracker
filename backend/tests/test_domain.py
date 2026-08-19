@@ -146,9 +146,10 @@ def test_fallback_requires_a_special_meal_when_none_was_recently_recommended(
     assert validate_plan(db, plan, seeded, MONDAY) == []
 
 
-def test_more_than_three_exercises_is_schema_invalid(db: Session, seeded) -> None:
+def test_more_than_four_exercises_is_schema_invalid(db: Session, seeded) -> None:
     plan = build_fallback_plan(db, MONDAY)
     payload = plan.model_dump()
+    payload["workout"]["exercises"].append(payload["workout"]["exercises"][0])
     payload["workout"]["exercises"].append(payload["workout"]["exercises"][0])
     with pytest.raises(ValidationError):
         DailyPlanProposal.model_validate(payload)

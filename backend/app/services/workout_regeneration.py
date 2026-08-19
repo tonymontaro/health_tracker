@@ -21,8 +21,8 @@ from app.schemas.plan import (
     proposal_from_document,
 )
 from app.services.planner.context import (
-    build_planner_context,
     build_profile_snapshot,
+    build_workout_regeneration_context,
     snapshot_summary,
 )
 from app.services.planner.domain import validate_plan
@@ -55,7 +55,7 @@ def regenerate_workout(
     _require_unresolved_workout(db, plan, current)
 
     refreshed_snapshot = build_profile_snapshot(db, profile, plan.plan_date)
-    context = build_planner_context(db, profile, refreshed_snapshot, plan.plan_date)
+    context = build_workout_regeneration_context(db, profile, refreshed_snapshot, plan.plan_date)
     context["workout_regeneration"] = {
         "requested": True,
         "user_preference": preference,

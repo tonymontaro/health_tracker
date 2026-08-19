@@ -128,7 +128,7 @@ class WorkoutPlanProposal(BaseModel):
     ]
     intensity: Literal["rest", "very_light", "light", "moderate", "hard"]
     title: str
-    exercises: list[ExerciseProposal] = Field(max_length=3)
+    exercises: list[ExerciseProposal] = Field(max_length=4)
     expected_duration_minutes: int = Field(ge=0, le=360)
     summary: str
 

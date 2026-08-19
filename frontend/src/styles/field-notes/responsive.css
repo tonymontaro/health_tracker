@@ -47,6 +47,7 @@
   .exercise-figure { padding: 0 0 2.25rem; border-left: 0; }
   .exercise-graphic { min-height: 390px; }
   .today-grid, .history-layout, .settings-grid, .account-security-card { grid-template-columns: 1fr; }
+  .training-guide-days article { grid-template-columns: 1fr; gap: 0.45rem; }
   .inventory-add-body { grid-template-columns: 1fr; gap: 1.5rem; }
   .account-security-card { gap: 2rem; }
   .side-column { gap: 0.4rem; }

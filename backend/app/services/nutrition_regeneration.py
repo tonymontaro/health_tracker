@@ -23,7 +23,7 @@ from app.schemas.plan import (
     PrepAction,
     proposal_from_document,
 )
-from app.services.planner.context import build_planner_context
+from app.services.planner.context import build_nutrition_regeneration_context
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
 from app.services.planner.meal_recipes import simple_meal_recipe
@@ -64,7 +64,7 @@ def regenerate_nutrition(
     forbidden_names = current_names | {EMERGENCY_TEMPLATE_NAME}
     _require_unresolved_main_meals(db, plan, current)
 
-    context = build_planner_context(db, profile, snapshot, plan.plan_date)
+    context = build_nutrition_regeneration_context(db, profile, snapshot, plan.plan_date)
     context["nutrition_regeneration"] = {
         "requested": True,
         "required_main_meal_count": len(current_meals),

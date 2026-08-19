@@ -44,6 +44,12 @@ EXERCISES = [
     ("Dip", "bodyweight", ["power tower"], False, True, "reps"),
     ("Weighted dip", "bodyweight", ["dip bars", "weights"], True, True, "load_reps"),
     ("One-arm dumbbell row", "strength", ["dumbbell"], False, True, "load_reps"),
+    ("Bulgarian split squat", "strength", ["dumbbells"], False, True, "load_reps"),
+    ("Suitcase hold", "strength", ["dumbbell"], False, False, "load_duration"),
+    ("Push-up", "bodyweight", [], False, True, "reps"),
+    ("Dead bug", "bodyweight", [], False, False, "reps"),
+    ("Side plank", "bodyweight", [], False, False, "duration"),
+    ("Bird dog", "bodyweight", [], False, False, "reps"),
     ("Barbell row", "strength", ["barbell"], True, True, "load_reps"),
     ("Overhead press", "strength", ["barbell"], True, True, "load_reps"),
     ("Treadmill run", "run", ["treadmill"], False, True, "distance_pace"),
@@ -644,7 +650,7 @@ def seed_all(db: Session, settings: Settings) -> UserProfile:
             primary_training_goal=PRIMARY_GOAL,
             max_main_meals_per_day=2,
             preferred_main_meals_per_day=2,
-            max_exercises_per_day=3,
+            max_exercises_per_day=4,
             gym_days=["Saturday", "Sunday"],
             office_days=["Thursday"],
             excluded_exercises=["squat", "back squat", "front squat"],
@@ -695,7 +701,7 @@ def seed_all(db: Session, settings: Settings) -> UserProfile:
                     compound=compound,
                     measurement_type=measurement,
                     pain_exclusion_tags=["lower_back"]
-                    if name in {"Deadlift", "Romanian deadlift"}
+                    if name in {"Deadlift", "Romanian deadlift", "Bulgarian split squat"}
                     else [],
                 )
             )

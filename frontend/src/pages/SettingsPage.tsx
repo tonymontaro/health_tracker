@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, setCsrf } from "../api/client";
-import type { Equipment, Profile, StravaIntegration } from "../api/types";
+import type { Equipment, Profile, StravaIntegration, TrainingPlanGuide } from "../api/types";
 import { useAuth } from "../components/auth";
 import { ConfirmDialog } from "../components/field-notes/ConfirmDialog";
 
@@ -23,6 +23,68 @@ function RuntimeDetails({ data, loading, error }: { data?: Record<string, string
       <div className="rule-list">{Object.entries(data ?? {}).map(([key, value]) => <div key={key}><span>{key.replaceAll("_", " ")}</span><strong>{String(value)}</strong></div>)}</div>
     </dialog>
   </>;
+}
+
+function guideDate(value: string): string {
+  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function TrainingPlanGuideCard() {
+  const queryClient = useQueryClient();
+  const guide = useQuery({
+    queryKey: ["training-plan"],
+    queryFn: () => api<TrainingPlanGuide | null>("/training-plan"),
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+  const upload = useMutation({
+    mutationFn: async (selected: File) => api<TrainingPlanGuide>("/training-plan", {
+      method: "PUT",
+      body: JSON.stringify({ filename: selected.name, csv_text: await selected.text() }),
+    }),
+    onSuccess: async () => {
+      setFile(null);
+      setInputKey((value) => value + 1);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["training-plan"] }),
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+      ]);
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (file) upload.mutate(file);
+  }
+  return <section className="card training-plan-guide-card">
+    <p className="eyebrow">Planning / Imported guide</p>
+    <h2>Training plan guide</h2>
+    <p>Upload a CSV with <code>Date</code> and <code>Workout</code> columns. Multiline workout details are supported. The AI treats the dated plan as high-priority guidance while pain, medical, equipment, and other hard constraints remain authoritative.</p>
+    {guide.isLoading && <p role="status">Loading the current training plan...</p>}
+    {guide.error && <p className="error" role="alert">{guide.error.message}</p>}
+    {guide.data ? <div className="training-guide-current">
+      <div className="integration-panel">
+        <p><strong>{guide.data.name}</strong></p>
+        <small>{guide.data.row_count} days · {guideDate(guide.data.start_date)} to {guideDate(guide.data.end_date)} · Updated {new Date(guide.data.updated_at).toLocaleString()}</small>
+        <small>Source file: {guide.data.source_filename}</small>
+      </div>
+      <details className="training-guide-details">
+        <summary>View imported schedule</summary>
+        <div className="training-guide-days">{guide.data.days.map((day) => <article key={day.plan_date}><time dateTime={day.plan_date}>{guideDate(day.plan_date)}</time><p>{day.workout}</p></article>)}</div>
+      </details>
+    </div> : !guide.isLoading && !guide.error ? <p>No training plan guide has been uploaded.</p> : null}
+    <form className="training-guide-upload" onSubmit={submit}>
+      <label>{guide.data ? "Replace training plan CSV" : "Training plan CSV"}<input key={inputKey} type="file" accept=".csv,text/csv" onChange={(event) => { upload.reset(); setFile(event.target.files?.[0] ?? null); }} /></label>
+      <small>Uploading another CSV replaces the active guide. Existing daily-plan history remains unchanged, and the current weekly outlook refreshes when recommendations next load.</small>
+      <button className="primary" type="submit" disabled={!file || upload.isPending}>{upload.isPending ? "Importing..." : guide.data ? "Replace guide" : "Import guide"}</button>
+      {upload.isSuccess && <p className="success" role="status">Training plan guide updated.</p>}
+      {upload.error && <p className="error" role="alert">{upload.error.message}</p>}
+    </form>
+  </section>;
 }
 
 export function SettingsPage() {
@@ -82,12 +144,13 @@ export function SettingsPage() {
   const passwordReady = currentPassword.length >= 8 && newPassword.length >= 12 && newPassword === confirmedPassword && !passwordUnchanged;
   return <><header className="page-header"><div><p className="eyebrow">Your constraints and preferences</p><h1>Settings</h1></div><p className="page-deck">The rules, equipment, capacity, and integrations that shape each daily recommendation.</p></header>
     <form className="settings-grid" onSubmit={submit}><section className="card"><p className="eyebrow">Profile</p><div className="form-grid"><label>Location<input value={form.location ?? ""} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label><label>Timezone<input value={form.timezone ?? ""} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label><label>Weight kg<input type="number" value={form.weight_kg ?? ""} onChange={(event) => setForm({ ...form, weight_kg: Number(event.target.value) })} /></label><label>Height cm<input type="number" value={form.height_cm ?? ""} onChange={(event) => setForm({ ...form, height_cm: Number(event.target.value) })} /></label><label>Age, optional<input type="number" value={form.age ?? ""} onChange={(event) => setForm({ ...form, age: Number(event.target.value) || null })} /></label><label>Sex, optional<input value={form.sex ?? ""} onChange={(event) => setForm({ ...form, sex: event.target.value || null })} /></label></div><label>Primary training goal<textarea value={form.primary_training_goal ?? ""} onChange={(event) => setForm({ ...form, primary_training_goal: event.target.value })} /></label><label>Current target goal<textarea placeholder="Example: Morat–Fribourg, 17.17 km with 335 m ascent, sub 1:35 on 4 October 2026" value={form.current_target_goal ?? ""} onChange={(event) => setForm({ ...form, current_target_goal: event.target.value || null })} /><small>This goal and recent performance evidence are included in every AI planning and coaching context.</small></label><label>Body-composition direction<textarea value={form.body_composition_goal ?? ""} onChange={(event) => setForm({ ...form, body_composition_goal: event.target.value || null })} /></label><button className="primary" disabled={save.isPending}>Save settings</button>{save.isSuccess && <span className="success">Saved</span>}{save.error && <p className="error">{save.error.message}</p>}</section>
-      <section className="card"><p className="eyebrow">Planning rules</p><div className="form-grid"><label>Maximum main meals<input type="number" min="1" max="2" value={form.max_main_meals_per_day ?? 2} onChange={(event) => setForm({ ...form, max_main_meals_per_day: Number(event.target.value) })} /></label><label>Preferred main meals<input type="number" min="1" max="2" value={form.preferred_main_meals_per_day ?? 2} onChange={(event) => setForm({ ...form, preferred_main_meals_per_day: Number(event.target.value) })} /></label><label>Maximum exercises<input type="number" min="1" max="3" value={form.max_exercises_per_day ?? 3} onChange={(event) => setForm({ ...form, max_exercises_per_day: Number(event.target.value) })} /></label><label>Thursday commute minutes<input type="number" min="0" value={Number(nutrition.thursday_commute_minutes ?? 180)} onChange={(event) => setForm({ ...form, nutrition_preferences: { ...nutrition, thursday_commute_minutes: Number(event.target.value) } })} /></label></div><label>Gym days, comma separated<input value={(form.gym_days ?? []).join(", ")} onChange={(event) => setForm({ ...form, gym_days: commaList(event.target.value) })} /></label><label>Office days, comma separated<input value={(form.office_days ?? []).join(", ")} onChange={(event) => setForm({ ...form, office_days: commaList(event.target.value) })} /></label><label>Excluded exercises, comma separated<input value={(form.excluded_exercises ?? []).join(", ")} onChange={(event) => setForm({ ...form, excluded_exercises: commaList(event.target.value) })} /></label><label>Allergies, comma separated<input value={(form.allergies ?? []).join(", ")} onChange={(event) => setForm({ ...form, allergies: commaList(event.target.value) })} /></label><label>Medical constraints, comma separated<input value={(form.medical_constraints ?? []).join(", ")} onChange={(event) => setForm({ ...form, medical_constraints: commaList(event.target.value) })} /></label></section>
+      <section className="card"><p className="eyebrow">Planning rules</p><div className="form-grid"><label>Maximum main meals<input type="number" min="1" max="2" value={form.max_main_meals_per_day ?? 2} onChange={(event) => setForm({ ...form, max_main_meals_per_day: Number(event.target.value) })} /></label><label>Preferred main meals<input type="number" min="1" max="2" value={form.preferred_main_meals_per_day ?? 2} onChange={(event) => setForm({ ...form, preferred_main_meals_per_day: Number(event.target.value) })} /></label><label>Maximum exercises<input type="number" min="1" max="4" value={form.max_exercises_per_day ?? 4} onChange={(event) => setForm({ ...form, max_exercises_per_day: Number(event.target.value) })} /></label><label>Thursday commute minutes<input type="number" min="0" value={Number(nutrition.thursday_commute_minutes ?? 180)} onChange={(event) => setForm({ ...form, nutrition_preferences: { ...nutrition, thursday_commute_minutes: Number(event.target.value) } })} /></label></div><label>Gym days, comma separated<input value={(form.gym_days ?? []).join(", ")} onChange={(event) => setForm({ ...form, gym_days: commaList(event.target.value) })} /></label><label>Office days, comma separated<input value={(form.office_days ?? []).join(", ")} onChange={(event) => setForm({ ...form, office_days: commaList(event.target.value) })} /></label><label>Excluded exercises, comma separated<input value={(form.excluded_exercises ?? []).join(", ")} onChange={(event) => setForm({ ...form, excluded_exercises: commaList(event.target.value) })} /></label><label>Allergies, comma separated<input value={(form.allergies ?? []).join(", ")} onChange={(event) => setForm({ ...form, allergies: commaList(event.target.value) })} /></label><label>Medical constraints, comma separated<input value={(form.medical_constraints ?? []).join(", ")} onChange={(event) => setForm({ ...form, medical_constraints: commaList(event.target.value) })} /></label></section>
       <section className="card"><p className="eyebrow">Current capacity</p><div className="form-grid"><label>Bench press load kg<input type="number" min="0" value={Number(bench.load_kg ?? 100)} onChange={(event) => setForm({ ...form, strength_capacity_json: { ...strength, bench_press: { ...bench, load_kg: Number(event.target.value) } } })} /></label><label>Strict pull-ups<input value={String(pullUp.reps ?? ">10")} onChange={(event) => setForm({ ...form, strength_capacity_json: { ...strength, strict_pull_up: { ...pullUp, reps: event.target.value } } })} /></label><label>Running goal minimum km<input type="number" min="0" value={runGoal[0]} onChange={(event) => setForm({ ...form, endurance_capacity_json: { ...endurance, running: { ...running, goal_distance_km: [Number(event.target.value), runGoal[1]] } } })} /></label><label>Running goal maximum km<input type="number" min="0" value={runGoal[1]} onChange={(event) => setForm({ ...form, endurance_capacity_json: { ...endurance, running: { ...running, goal_distance_km: [runGoal[0], Number(event.target.value)] } } })} /></label><label>Cycling FTP watts, optional<input type="number" min="0" value={Number(endurance.cycling_ftp_watts ?? 0) || ""} onChange={(event) => setForm({ ...form, endurance_capacity_json: { ...endurance, cycling_ftp_watts: Number(event.target.value) || null } })} /></label><label>Protein target minimum g<input type="number" min="0" value={proteinRange[0]} onChange={(event) => setForm({ ...form, nutrition_preferences: { ...nutrition, protein_range_g: [Number(event.target.value), proteinRange[1]] } })} /></label><label>Protein target maximum g<input type="number" min="0" value={proteinRange[1]} onChange={(event) => setForm({ ...form, nutrition_preferences: { ...nutrition, protein_range_g: [proteinRange[0], Number(event.target.value)] } })} /></label></div></section>
       <section className="card"><p className="eyebrow">Available equipment</p>{equipment.data?.map((item) => <label className="equipment-row" key={item.id}><input type="checkbox" checked={item.available} onChange={(event) => equipmentUpdate.mutate({ id: item.id, available: event.target.checked })} />{item.name}</label>)}</section>
       <section className="card"><p className="eyebrow">Recommended kitchen additions</p>{(form.kitchen_equipment_json ?? []).map((item) => <label className="equipment-row" key={item.name}><input type="checkbox" checked={item.owned === true} onChange={(event) => setForm({ ...form, kitchen_equipment_json: form.kitchen_equipment_json?.map((candidate) => candidate.name === item.name ? { ...candidate, owned: event.target.checked } : candidate) })} />{item.name}</label>)}</section>
       <section className="card"><p className="eyebrow">Integrations</p><h3>Strava</h3>{strava.data?.connected ? <div className="integration-panel"><p><strong>{strava.data.athlete?.name || "Connected athlete"}</strong></p><small>{strava.data.activity_count} activities imported{strava.data.last_synced_at ? ` · Last synced ${new Date(strava.data.last_synced_at).toLocaleString()}` : ""}</small><div className="actions"><button type="button" className="quiet" disabled={syncStrava.isPending} onClick={() => syncStrava.mutate()}>{syncStrava.isPending ? "Syncing..." : "Sync now"}</button><button type="button" className="quiet" disabled={disconnectStrava.isPending} onClick={() => { disconnectStrava.reset(); setConfirmDisconnect(true); }}>Disconnect</button></div></div> : <div className="integration-panel"><p>Import activities recorded by your watch through Strava and match them to the day's recommendations.</p><button type="button" className="primary" disabled={!strava.data?.configured || connectStrava.isPending} onClick={() => connectStrava.mutate()}>{connectStrava.isPending ? "Opening Strava..." : "Connect with Strava"}</button>{strava.data && !strava.data.configured && <small>Set the Strava client credentials on the backend to enable this connection.</small>}</div>}{strava.data?.last_error && <p className="error">{strava.data.last_error}</p>}{(connectStrava.error || syncStrava.error || disconnectStrava.error) && <p className="error">{connectStrava.error?.message ?? syncStrava.error?.message ?? disconnectStrava.error?.message}</p>}<hr /><h3>Chrome extension token</h3><p>Generate a revocable token and paste it into the extension. It is shown only once.</p><button type="button" className="quiet" onClick={() => token.mutate()}>Generate token</button>{createdToken && <code className="token-output">{createdToken}</code>}<hr /><RuntimeDetails data={runtime.data} loading={runtime.isLoading} error={runtime.error} /></section>
     </form>
+    <TrainingPlanGuideCard />
     <section className="card account-security-card">
       <div className="account-security-summary">
         <p className="eyebrow">Account and access</p>

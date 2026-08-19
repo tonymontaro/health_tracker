@@ -315,7 +315,7 @@ def _home_strength(db: Session) -> WorkoutPlanProposal:
     if has_dumbbells:
         exercises.append(hinge)
     profile = db.scalar(select(UserProfile))
-    exercises = exercises[: profile.max_exercises_per_day if profile else 3]
+    exercises = exercises[: profile.max_exercises_per_day if profile else 4]
     if not exercises:
         return _run(db)
     return WorkoutPlanProposal(
@@ -324,7 +324,7 @@ def _home_strength(db: Session) -> WorkoutPlanProposal:
         title="Home strength essentials",
         exercises=exercises,
         expected_duration_minutes=42,
-        summary="Three high-value compound movements with conservative measurable targets.",
+        summary="High-value compound movements with conservative measurable targets.",
     )
 
 
@@ -403,7 +403,7 @@ def _gym_strength(db: Session) -> WorkoutPlanProposal:
             instructions="Use strict range of motion. Reduce to bodyweight if needed.",
         ),
         deadlift,
-    ][: profile.max_exercises_per_day if profile else 3]
+    ][: profile.max_exercises_per_day if profile else 4]
     return WorkoutPlanProposal(
         kind="strength",
         intensity="moderate",
@@ -484,8 +484,12 @@ def build_fallback_plan(
             if batch_template
             else []
         )
-    if horizon_day and horizon_day.get("workout"):
-        workout = WorkoutPlanProposal.model_validate(horizon_day["workout"])
+    horizon_workout = horizon_day.get("workout", {}) if horizon_day else {}
+    if horizon_workout.get("exercises") is not None:
+        # Immutable v1 horizons stored full prescriptions. New horizons are strategic, so the
+        # deterministic fallback keeps its proven day-specific prescription instead of guessing
+        # how to expand free text without AI.
+        workout = WorkoutPlanProposal.model_validate(horizon_workout)
     main_protein = meal_1.estimated_protein_g + (meal_2.estimated_protein_g if meal_2 else 0)
     horizon_fueling = (
         horizon_day.get("nutrition", {}).get("fueling_recommendations", []) if horizon_day else []

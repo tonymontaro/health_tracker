@@ -5,12 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Exercise, MealTemplate, TwoWeekPlan, UserProfile, WorkoutEntry
-from app.schemas.plan import ExerciseProposal, ExerciseType, WorkoutPlanProposal
+from app.schemas.plan import WorkoutPlanProposal
 from app.schemas.two_week_plan import (
     TwoWeekNutritionGuidance,
     TwoWeekPlanDay,
     TwoWeekPlanDocument,
     TwoWeekPlanProposal,
+    TwoWeekWorkoutGuidance,
+    parse_two_week_plan_document,
 )
 from app.services.planner.fallback import build_fallback_plan
 from app.services.planner.meal_selection import (
@@ -33,7 +35,7 @@ def build_fallback_two_week_plan(
     variation_seed: int = 0,
 ) -> TwoWeekPlanProposal:
     previous_document = (
-        TwoWeekPlanDocument.model_validate(previous.plan_json) if previous is not None else None
+        parse_two_week_plan_document(previous.plan_json) if previous is not None else None
     )
     previous_days = (
         {day.plan_date: day for day in previous_document.days} if previous_document else {}
@@ -53,7 +55,7 @@ def build_fallback_two_week_plan(
         plan_date = window_start + timedelta(days=offset)
         prior_day = previous_days.get(plan_date) if preserve_previous or offset == 0 else None
         fallback = build_fallback_plan(db, plan_date)
-        workout = prior_day.workout if prior_day else fallback.workout
+        workout = prior_day.workout if prior_day else _strategic_workout(db, fallback.workout)
         workout_adapted = False
         rationale = (
             "Preserved from yesterday's rolling horizon because no new evidence requires a change."
@@ -69,11 +71,11 @@ def build_fallback_two_week_plan(
             preserve_previous
             and offset == 0
             and missed_workout is not None
-            and _workout_allowed_on_date(db, profile, missed_workout, plan_date)
+            and _workout_allowed_on_date(profile, missed_workout, plan_date)
         ):
             workout = missed_workout
             workout_adapted = True
-            rationale = "Moved the missed session forward by one day while preserving its targets."
+            rationale = "Moved the missed session intent forward by one day."
 
         if prior_day and not workout_adapted:
             nutrition = prior_day.nutrition
@@ -152,7 +154,7 @@ def _adaptation_evidence(db: Session, window_start: date) -> dict[str, bool]:
 
 def _missed_workout(
     previous: TwoWeekPlanDocument | None, evidence: dict[str, bool]
-) -> WorkoutPlanProposal | None:
+) -> TwoWeekWorkoutGuidance | None:
     if previous is None or not evidence["missed"] or not previous.days:
         return None
     missed = previous.days[0].workout
@@ -160,45 +162,48 @@ def _missed_workout(
 
 
 def _workout_allowed_on_date(
-    db: Session,
     profile: UserProfile,
-    workout: WorkoutPlanProposal,
+    workout: TwoWeekWorkoutGuidance,
     plan_date: date,
 ) -> bool:
     weekday = plan_date.strftime("%A")
     if weekday == "Thursday" and workout.kind != "recovery":
         return False
-    catalog = {
-        item.name.casefold(): item
-        for item in db.scalars(select(Exercise).where(Exercise.active.is_(True)))
-    }
-    for prescription in workout.exercises:
-        item = catalog.get(prescription.exercise_name.casefold())
-        if item is None:
-            return False
-        if item.gym_only and (
-            weekday not in {"Saturday", "Sunday"} or weekday not in profile.gym_days
-        ):
-            return False
-    return True
+    return not workout.requires_gym or (
+        weekday in {"Saturday", "Sunday"} and weekday in profile.gym_days
+    )
 
 
-def _recovery_workout() -> WorkoutPlanProposal:
-    return WorkoutPlanProposal(
+def _recovery_workout() -> TwoWeekWorkoutGuidance:
+    return TwoWeekWorkoutGuidance(
         kind="recovery",
         intensity="very_light",
         title="Restore before the next effort",
-        exercises=[
-            ExerciseProposal(
-                exercise_name="Walking / easy movement",
-                exercise_type=ExerciseType.RECOVERY,
-                duration_seconds=1500,
-                expected_difficulty=2,
-                instructions="Keep the movement easy and stop if symptoms become concerning.",
-            )
-        ],
         expected_duration_minutes=25,
+        requires_gym=False,
         summary="A short recovery session protects the next useful training day.",
+    )
+
+
+def _strategic_workout(
+    db: Session,
+    workout: WorkoutPlanProposal,
+) -> TwoWeekWorkoutGuidance:
+    gym_only_names = {
+        exercise.name.casefold()
+        for exercise in db.scalars(
+            select(Exercise).where(Exercise.active.is_(True), Exercise.gym_only.is_(True))
+        )
+    }
+    return TwoWeekWorkoutGuidance(
+        kind=workout.kind,
+        intensity=workout.intensity,
+        title=workout.title,
+        expected_duration_minutes=workout.expected_duration_minutes,
+        requires_gym=any(
+            exercise.exercise_name.casefold() in gym_only_names for exercise in workout.exercises
+        ),
+        summary=workout.summary,
     )
 
 
@@ -206,7 +211,7 @@ def _nutrition_guidance(
     db: Session,
     profile: UserProfile,
     plan_date: date,
-    workout: WorkoutPlanProposal,
+    workout: TwoWeekWorkoutGuidance,
     meal_counts: Counter[str],
     last_selected: set[str],
     variation_seed: int,

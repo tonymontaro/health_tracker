@@ -14,8 +14,9 @@ from app.db.models import (
     WorkoutEntry,
 )
 from app.schemas.plan import DailyPlanDocument, canonicalize_proposal
+from app.schemas.two_week_plan import parse_two_week_plan_document
 from app.services.planner.context import (
-    build_planner_context,
+    build_daily_planner_context,
     build_profile_snapshot,
     snapshot_summary,
 )
@@ -26,7 +27,11 @@ from app.services.planner.openai_planner import (
     OpenAIPlanner,
     PlannerProviderError,
 )
-from app.services.planner.two_week import ensure_two_week_plan, latest_two_week_plan
+from app.services.planner.two_week import (
+    ensure_two_week_plan,
+    horizon_uses_active_training_plan_guide,
+    latest_two_week_plan,
+)
 from app.services.recording_dates import current_recording_date
 
 
@@ -39,25 +44,26 @@ def generate_daily_plan(
 ) -> DailyPlan:
     existing = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == plan_date))
     horizon = latest_two_week_plan(db, plan_date)
-    if existing and (horizon or plan_date != current_recording_date(settings)):
+    if existing and plan_date != current_recording_date(settings):
         return existing
     profile = db.scalar(select(UserProfile))
     if profile is None:
         raise RuntimeError("Profile has not been seeded")
+    if existing and horizon and horizon_uses_active_training_plan_guide(db, horizon, profile):
+        return existing
 
     snapshot = build_profile_snapshot(db, profile, plan_date)
-    if horizon is None:
-        horizon = ensure_two_week_plan(
-            db,
-            settings,
-            plan_date,
-            use_ai=use_ai,
-            profile=profile,
-            snapshot=snapshot,
-        )
+    horizon = ensure_two_week_plan(
+        db,
+        settings,
+        plan_date,
+        use_ai=use_ai,
+        profile=profile,
+        snapshot=snapshot,
+    )
     if existing:
         return existing
-    context = build_planner_context(db, profile, snapshot, plan_date)
+    context = build_daily_planner_context(db, profile, snapshot, plan_date)
     run = PlanningRun(
         plan_date=plan_date,
         model=settings.openai_planner_model if use_ai else "deterministic-fallback",
@@ -111,11 +117,12 @@ def generate_daily_plan(
             validation["openai_error"] = last_error
 
     if proposal is None:
+        horizon_document = parse_two_week_plan_document(horizon.plan_json)
         current_horizon_day = next(
             (
-                day
-                for day in horizon.plan_json.get("days", [])
-                if day.get("plan_date") == plan_date.isoformat()
+                day.model_dump(mode="json")
+                for day in horizon_document.days
+                if day.plan_date == plan_date
             ),
             None,
         )

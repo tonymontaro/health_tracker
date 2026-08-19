@@ -5,9 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import ProfileSnapshot, TwoWeekPlan, UserProfile
-from app.schemas.two_week_plan import TwoWeekPlanDocument, TwoWeekPlanProposal
-from app.services.planner.context import build_planner_context, build_profile_snapshot
+from app.db.models import DailyPlan, ProfileSnapshot, TwoWeekPlan, UserProfile
+from app.schemas.two_week_plan import (
+    TwoWeekPlanDocument,
+    TwoWeekPlanProposal,
+    parse_two_week_plan_document,
+)
+from app.services.planner.context import build_horizon_planner_context, build_profile_snapshot
 from app.services.planner.domain import validate_two_week_plan
 from app.services.planner.openai_planner import PlannerProviderError
 from app.services.planner.openai_two_week_planner import (
@@ -15,18 +19,20 @@ from app.services.planner.openai_two_week_planner import (
     OpenAITwoWeekPlanner,
 )
 from app.services.planner.two_week_fallback import build_fallback_two_week_plan
+from app.services.training_plan_guide import active_training_plan_guide_revision
 
 
 def serialize_committed_outlook(plan: TwoWeekPlan) -> dict[str, Any]:
+    document = parse_two_week_plan_document(plan.plan_json)
     return {
         "anchor_date": plan.anchor_date.isoformat(),
         "revision": plan.revision,
         "source": plan.source,
-        "summary": plan.plan_json["summary"],
-        "training_strategy": plan.plan_json["training_strategy"],
-        "nutrition_strategy": plan.plan_json["nutrition_strategy"],
-        "adjustment_summary": plan.plan_json["adjustment_summary"],
-        "days": plan.plan_json["days"][:7],
+        "summary": document.summary,
+        "training_strategy": document.training_strategy,
+        "nutrition_strategy": document.nutrition_strategy,
+        "adjustment_summary": document.adjustment_summary,
+        "days": [day.model_dump(mode="json") for day in document.days[:7]],
         "generated_at": plan.created_at.isoformat(),
     }
 
@@ -39,6 +45,21 @@ def latest_two_week_plan(db: Session, anchor_date: date) -> TwoWeekPlan | None:
     )
 
 
+def horizon_uses_active_training_plan_guide(
+    db: Session,
+    horizon: TwoWeekPlan,
+    profile: UserProfile,
+) -> bool:
+    guide_context = (
+        horizon.context_snapshot_json.get("current_evidence_and_constraints", {}).get(
+            "active_training_plan_guide"
+        )
+        or {}
+    )
+    stored = guide_context.get("guide_revision")
+    return stored == active_training_plan_guide_revision(db, profile)
+
+
 def ensure_two_week_plan(
     db: Session,
     settings: Settings,
@@ -49,13 +70,13 @@ def ensure_two_week_plan(
     snapshot: ProfileSnapshot | None = None,
 ) -> TwoWeekPlan:
     existing = latest_two_week_plan(db, anchor_date)
-    if existing is not None:
-        return existing
     profile = profile or db.scalar(select(UserProfile))
     if profile is None:
         raise RuntimeError("Profile has not been seeded")
+    if existing is not None and horizon_uses_active_training_plan_guide(db, existing, profile):
+        return existing
     snapshot = snapshot or build_profile_snapshot(db, profile, anchor_date)
-    previous = db.scalar(
+    previous = existing or db.scalar(
         select(TwoWeekPlan)
         .where(TwoWeekPlan.anchor_date < anchor_date)
         .order_by(TwoWeekPlan.anchor_date.desc(), TwoWeekPlan.revision.desc())
@@ -67,9 +88,10 @@ def ensure_two_week_plan(
         profile=profile,
         snapshot=snapshot,
         previous=previous,
-        revision=1,
+        revision=existing.revision + 1 if existing is not None else 1,
         use_ai=use_ai,
         regeneration_preference=None,
+        generation_reason="guide_replacement" if existing is not None else "automatic",
     )
 
 
@@ -102,6 +124,7 @@ def regenerate_two_week_plan(
         revision=(previous.revision + 1 if previous and previous.anchor_date == anchor_date else 1),
         use_ai=use_ai,
         regeneration_preference=preference,
+        generation_reason="manual_regeneration",
     )
 
 
@@ -116,14 +139,15 @@ def _generate_two_week_plan(
     revision: int,
     use_ai: bool,
     regeneration_preference: str | None,
+    generation_reason: Literal["automatic", "manual_regeneration", "guide_replacement"],
 ) -> TwoWeekPlan:
-    daily_context = build_planner_context(
+    planning_context = build_horizon_planner_context(
         db,
         profile,
         snapshot,
         anchor_date,
-        include_two_week_plan=False,
     )
+    preserve_current_day = _preserve_current_day(db, anchor_date, generation_reason)
     context = {
         "planning_window": {
             "anchor_date": anchor_date.isoformat(),
@@ -140,14 +164,28 @@ def _generate_two_week_plan(
                 (anchor_date + timedelta(days=offset)).isoformat() for offset in range(7, 14)
             ],
         },
-        "current_evidence_and_constraints": daily_context,
-        "previous_plan": previous.plan_json if previous is not None else None,
+        "current_evidence_and_constraints": planning_context,
+        "previous_plan": (
+            parse_two_week_plan_document(previous.plan_json).model_dump(mode="json")
+            if previous is not None
+            else None
+        ),
         "manual_regeneration": {
-            "requested": revision > 1 or regeneration_preference is not None,
+            "requested": generation_reason == "manual_regeneration",
             "user_preference": regeneration_preference,
             "instruction": (
                 "Create a materially refreshed but safe horizon. Treat the optional preference as "
                 "high priority after all hard constraints."
+            ),
+        },
+        "generation_reason": generation_reason,
+        "current_day_preservation": {
+            "required": preserve_current_day,
+            "instruction": (
+                "Preserve day zero exactly because today's canonical daily plan already exists. "
+                "Apply the replacement guide from day one onward."
+                if preserve_current_day
+                else "No existing canonical daily plan requires day-zero preservation."
             ),
         },
         "stability_policy": {
@@ -187,7 +225,14 @@ def _generate_two_week_plan(
                 }
                 continue
             errors = validate_two_week_plan(db, candidate, profile, anchor_date)
-            errors.extend(_manual_regeneration_errors(candidate, previous, anchor_date, revision))
+            errors.extend(
+                _current_day_preservation_errors(
+                    candidate,
+                    previous,
+                    anchor_date,
+                    required=preserve_current_day,
+                )
+            )
             validation["attempts"].append({"attempt": attempt, "errors": errors, "stage": "domain"})
             if not errors:
                 proposal = candidate
@@ -207,12 +252,17 @@ def _generate_two_week_plan(
             profile,
             anchor_date,
             previous,
-            preserve_previous=revision == 1,
+            preserve_previous=generation_reason != "manual_regeneration",
             variation_seed=revision - 1,
         )
         fallback_errors = validate_two_week_plan(db, proposal, profile, anchor_date)
         fallback_errors.extend(
-            _manual_regeneration_errors(proposal, previous, anchor_date, revision)
+            _current_day_preservation_errors(
+                proposal,
+                previous,
+                anchor_date,
+                required=preserve_current_day,
+            )
         )
         validation["fallback_errors"] = fallback_errors
         if fallback_errors:
@@ -243,20 +293,33 @@ def _generate_two_week_plan(
     return row
 
 
-def _manual_regeneration_errors(
+def _preserve_current_day(
+    db: Session,
+    anchor_date: date,
+    generation_reason: str,
+) -> bool:
+    if generation_reason == "manual_regeneration":
+        return True
+    if generation_reason != "guide_replacement":
+        return False
+    return db.scalar(select(DailyPlan.id).where(DailyPlan.plan_date == anchor_date)) is not None
+
+
+def _current_day_preservation_errors(
     proposal: TwoWeekPlanProposal,
     previous: TwoWeekPlan | None,
     anchor_date: date,
-    revision: int,
+    *,
+    required: bool,
 ) -> list[str]:
-    if revision <= 1 or previous is None or previous.anchor_date != anchor_date:
+    if not required or previous is None or previous.anchor_date != anchor_date:
         return []
-    prior_document = TwoWeekPlanDocument.model_validate(previous.plan_json)
+    prior_document = parse_two_week_plan_document(previous.plan_json)
     prior_today = prior_document.days[0]
     candidate_today = proposal.days[0]
     errors: list[str] = []
     if candidate_today.workout != prior_today.workout:
-        errors.append("Manual weekly regeneration must preserve today's workout guidance.")
+        errors.append("The horizon revision must preserve today's workout guidance.")
     if candidate_today.nutrition != prior_today.nutrition:
-        errors.append("Manual weekly regeneration must preserve today's nutrition guidance.")
+        errors.append("The horizon revision must preserve today's nutrition guidance.")
     return errors

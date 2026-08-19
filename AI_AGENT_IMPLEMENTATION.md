@@ -484,7 +484,7 @@ weight_kg = 90
 height_cm = 180
 max_main_meals_per_day = 2
 preferred_main_meals_per_day = 2
-max_exercises_per_day = 3
+max_exercises_per_day = 4
 gym_days = [Saturday, Sunday]
 office_days = [Thursday]
 excluded_exercises includes squat-based programming by default
@@ -1978,7 +1978,7 @@ Prioritize nutrient density, protein, produce, fiber,
 training support, low active cooking time, batch preparation,
 inventory use, and consistency.
 
-Never recommend more than three exercises in one day.
+Never recommend more than four exercises in one day.
 
 Gym-specific exercise is allowed only Saturday or Sunday.
 
