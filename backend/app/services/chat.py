@@ -8,11 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import ChatMessage, DailyPlan, UserProfile
 from app.schemas.api import QAResponse
+from app.services.coach import COACH_CHARACTER_PROMPT
 from app.services.planner.context import build_qa_context
 
-QA_SYSTEM_PROMPT = """Answer questions about today's personal health and hybrid training plan.
+QA_SYSTEM_PROMPT = f"""{COACH_CHARACTER_PROMPT}
+Answer questions about today's personal health and hybrid training plan.
 Use only the supplied profile, plan, history, inventory, and constraints.
-Be concise and practical. Clearly distinguish recorded facts, calculations, estimates, and goals.
+Be concise, practical, and conversational. Use dry humor sparingly when it helps, but keep the answer
+and next action central. A brief story is optional. Decide for yourself when one would materially improve
+motivation, encouragement, or make the coaching lesson memorable; the athlete does not need to ask.
+Most answers should contain no story, and a story must never be forced or exceed two short sentences.
+Clearly distinguish recorded facts, calculations, estimates, and goals.
 When a current target goal exists, use goal_progress_evidence to estimate proximity when relevant and
 state assumptions behind any projected time or readiness percentage.
 Do not diagnose medical conditions. Concerning symptoms or pain should lead to cautious advice and professional care.

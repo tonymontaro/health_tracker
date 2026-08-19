@@ -40,6 +40,7 @@ def settings() -> Settings:
         DATABASE_URL=TEST_DATABASE_URL,
         APP_ENV="test",
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
     )
 
 

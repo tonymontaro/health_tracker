@@ -12,7 +12,7 @@ from app.db.models import (
     UserProfile,
     WorkoutEntry,
 )
-from app.services.coach import coach_message
+from app.services.coach import coach_response, coach_style_context
 from app.services.email import ResendEmailService, evening_email, morning_email
 from app.services.history import reconcile_day
 from app.services.planner.orchestrator import generate_daily_plan
@@ -71,8 +71,15 @@ def _send_plan_email(
         "workout": plan.current_plan_json.get("workout"),
         "nutrition_guidance": plan.current_plan_json.get("nutrition", {}).get("guidance"),
     }
+    coach_style = coach_style_context(db, target_date)
     if event_type == "morning_email":
-        note = coach_message(settings, moment="morning_email", facts=coach_facts)
+        coach = coach_response(
+            settings,
+            moment="morning_email",
+            facts=coach_facts,
+            style=coach_style,
+        )
+        note = coach.message
         subject, text, html = morning_email(plan.current_plan_json, settings.app_base_url, note)
     else:
         workout_entries = list(
@@ -96,7 +103,13 @@ def _send_plan_email(
             ),
             "pain_recorded": any(entry.pain_flag for entry in workout_entries),
         }
-        note = coach_message(settings, moment="evening_email", facts=coach_facts)
+        coach = coach_response(
+            settings,
+            moment="evening_email",
+            facts=coach_facts,
+            style=coach_style,
+        )
+        note = coach.message
         subject, text, html = evening_email(plan.current_plan_json, settings.app_base_url, note)
     try:
         recipient = settings.resend_to
@@ -117,6 +130,12 @@ def _send_plan_email(
             "provider": "resend",
             "provider_message_id": provider_message_id,
             "attempt_count": prior_attempts + 1,
+            "coach_note": coach.message,
+            "coach_style": {
+                "story_allowed": coach_style["story_allowed"],
+                "story_kind": coach.story_kind,
+                "story_topic": coach.story_topic,
+            },
         }
     except Exception as exc:
         event.status = "failed"

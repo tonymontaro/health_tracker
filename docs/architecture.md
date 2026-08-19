@@ -83,6 +83,21 @@ Horizon planning receives compact catalog metadata and no recipes, inventory, sh
 Daily planning receives eligible current-day catalogs, a compact summary of yesterday, and only the nearby horizon.
 Workout regeneration excludes nutrition catalogs and inventory, while nutrition regeneration excludes workout history and the exercise catalog.
 
+## Coach messaging
+
+Coach Forge generates workout feedback and the coaching note in morning and evening emails with one shared character prompt.
+The critical coaching signal and next useful action remain primary, while dry humor is optional and pain or safety messages stay serious.
+The interactive plan Q&A uses the same character and independently decides whether a brief story would materially strengthen motivation, encouragement, or the coaching lesson.
+The athlete does not need to request a story, and most Q&A remains direct feedback without one.
+
+Generated coaching notes include internal structured metadata indicating whether a humorous or motivational story was used and a short topic key.
+Successful email deliveries retain this metadata in their notification record, while workout feedback retains it in the existing context snapshot.
+No separate story table or schema migration is required.
+
+Each generated coaching note receives at most ten compact recent-message excerpts and twelve recent story topics from the preceding thirty days.
+After a story is delivered, stories are disabled for the following four calendar days, while ordinary feedback and occasional non-story humor remain available.
+Application validation rejects a story during the cooldown, in a pain-related message, or when its normalized topic exactly repeats a recent topic, then uses the deterministic serious fallback.
+
 ## Imported training-plan guide
 
 Settings accepts one CSV with `Date` and `Workout` columns as the active externally supplied training guide.

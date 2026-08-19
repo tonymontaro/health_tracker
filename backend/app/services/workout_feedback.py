@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import DailyPlan, UserProfile, WorkoutCoachFeedback, WorkoutEntry
-from app.services.coach import coach_message
+from app.services.coach import coach_response, coach_style_context
 
 
 def ensure_workout_feedback(
@@ -63,13 +63,26 @@ def ensure_workout_feedback(
         "skipped_count": sum("skipped" in entry.status for entry in entries),
         "pain_flag": any(entry.pain_flag for entry in entries),
     }
-    message = coach_message(settings, moment="workout_feedback", facts=facts)
+    style = coach_style_context(db, target_date)
+    response = coach_response(
+        settings,
+        moment="workout_feedback",
+        facts=facts,
+        style=style,
+    )
     feedback = existing or WorkoutCoachFeedback(feedback_date=target_date)
-    feedback.message = message
+    feedback.message = response.message
     feedback.model = (
         settings.openai_qa_model if settings.openai_key_value else "deterministic-fallback"
     )
-    feedback.context_snapshot_json = facts
+    feedback.context_snapshot_json = {
+        **facts,
+        "coach_style": {
+            "story_allowed": style["story_allowed"],
+            "story_kind": response.story_kind,
+            "story_topic": response.story_topic,
+        },
+    }
     if existing is None:
         db.add(feedback)
     db.commit()

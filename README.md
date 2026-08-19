@@ -9,6 +9,10 @@ Uploading another CSV replaces the active guide without rewriting existing daily
 The application preserves what was recommended, what actually happened, what was assumed at reconciliation, and every later correction.
 Future recommendations use corrected history without rewriting old plans.
 
+Coach Forge keeps a demanding, evidence-grounded coaching voice while using occasional dry humor when it supports the message.
+Brief humorous or motivational stories are optional rather than daily, enter a four-day cooldown after use, and are checked against compact recent-message and story-topic history to reduce repetition.
+Pain, illness, injury, and safety feedback remains serious.
+
 Meal recommendations avoid consecutive-day template repeats when alternatives exist, favor easy nutrient-dense food by default, and include a more ambitious curated meal at least weekly.
 Inventory can improve convenience and reduce waste, but missing ingredients do not prevent a meal from being recommended.
 The Today page also accepts optional high-priority preferences when regenerating meals or exercise.

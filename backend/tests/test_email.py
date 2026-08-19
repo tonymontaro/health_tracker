@@ -167,6 +167,12 @@ def test_email_job_retries_legacy_sent_row_for_current_resend_recipient(
     assert result.metadata_json["provider"] == "resend"
     assert result.metadata_json["provider_message_id"] == "email_current_123"
     assert result.metadata_json["attempt_count"] == 1
+    assert result.metadata_json["coach_note"]
+    assert result.metadata_json["coach_style"] == {
+        "story_allowed": True,
+        "story_kind": "none",
+        "story_topic": None,
+    }
 
 
 def test_email_job_does_not_repeat_current_resend_delivery(
