@@ -331,7 +331,7 @@ health-autopilot/
 │   └── dev_setup.sh
 ├── docs/
 │   └── architecture.md
-├── docker-compose.yml
+├── scripts/native_postgres.sh
 ├── .env.example
 ├── .gitignore
 └── README.md

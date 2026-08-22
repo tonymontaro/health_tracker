@@ -8,7 +8,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e './backend[dev]'
 npm install
-docker compose up -d postgres
+./scripts/native_postgres.sh setup
 
 cd backend
 ../.venv/bin/alembic upgrade head

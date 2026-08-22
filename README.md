@@ -51,7 +51,7 @@ docs/         Architecture documentation
 
 - Python 3.12 or newer
 - Node.js 22 or newer
-- Docker with Docker Compose
+- Homebrew and native PostgreSQL 17
 
 ## Local setup
 
@@ -64,7 +64,7 @@ Run:
 ./scripts/dev_setup.sh
 ```
 
-The setup creates a project-local virtual environment, installs approved project dependencies, starts PostgreSQL, applies migrations, and seeds the initial profile and catalogs.
+The setup creates a project-local virtual environment, installs approved project dependencies, installs and starts native PostgreSQL 17 through Homebrew, applies migrations, and seeds the initial profile and catalogs. PostgreSQL runs as a macOS login service on port `55432`; Docker is not used.
 
 The default development login is:
 
@@ -101,7 +101,13 @@ Do not commit `.env` or any API token.
 Start local services:
 
 ```bash
-docker compose up -d postgres
+make db-up
+```
+
+For first-time native PostgreSQL provisioning, including the `health` and `health_test` databases, run:
+
+```bash
+./scripts/native_postgres.sh setup
 ```
 
 Apply migrations:
@@ -285,7 +291,7 @@ Correctness does not depend on a single in-memory timer.
 Create the test database once when using the local Compose PostgreSQL service:
 
 ```bash
-docker compose exec postgres createdb -U health health_test
+./scripts/native_postgres.sh setup
 ```
 
 Run all quality gates:

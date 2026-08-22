@@ -7,10 +7,10 @@ setup:
 	./scripts/dev_setup.sh
 
 db-up:
-	docker compose up -d postgres
+	./scripts/native_postgres.sh start
 
 db-down:
-	docker compose down
+	./scripts/native_postgres.sh stop
 
 migrate:
 	cd backend && ../.venv/bin/alembic upgrade head
@@ -121,4 +121,3 @@ build:
 	npm run build
 
 verify: lint typecheck test build
-

@@ -16,9 +16,9 @@ PostgreSQL is the source of truth. FastAPI owns state changes and hard constrain
 
 ## Important runtime facts
 
-- Python 3.12+, Node.js 22+, and Docker Compose are expected.
+- Python 3.12+, Node.js 22+, Homebrew, and native PostgreSQL 17 are expected. Docker is not used by this project.
 - The project-local Python environment is `.venv`; use its executables rather than a global Python installation.
-- PostgreSQL normally listens on local port `55432` through Compose.
+- PostgreSQL normally listens on local port `55432` as the Homebrew `postgresql@17` service.
 - The backend listens on `http://localhost:8001`; port 8000 belongs to another application on the owner's host.
 - The Vite frontend listens on `http://localhost:5173` and proxies `/api` and `/health` to port 8001.
 - Application dates are based on `Europe/Zurich`, not UTC or the agent's inferred locale.
