@@ -432,11 +432,9 @@ def complete_workout(
     changed: list[WorkoutEntry] = []
     for entry in entries:
         if entry.planned_recommendation_id in payload.results:
-            actual = payload.results[entry.planned_recommendation_id]
-            if not actual:
-                raise HTTPException(status_code=422, detail="Actual performance cannot be empty")
-            entry.actual_json = actual
-            entry.difficulty_1_to_10 = payload.difficulty_1_to_10
+            result = payload.results[entry.planned_recommendation_id]
+            entry.actual_json = result.actual
+            entry.difficulty_1_to_10 = result.difficulty_1_to_10
             entry.pain_flag = payload.pain_flag
             entry.notes = payload.notes
             entry.status = "completed"

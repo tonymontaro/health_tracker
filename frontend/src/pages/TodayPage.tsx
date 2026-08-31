@@ -523,35 +523,41 @@ function WorkoutCard({
   const workoutLogLocked = today.workout_log !== null;
   const complete = useMutation({
     mutationFn: () => {
-      const results: Record<string, Record<string, unknown>> = {};
+      const results: Record<string, { actual: Record<string, unknown>; difficulty_1_to_10: number }> = {};
       for (const exercise of today.workout.exercises) {
         const first = values[`${exercise.recommendation_id}:first`] ?? "";
         const second = values[`${exercise.recommendation_id}:second`] ?? "";
+        let actual: Record<string, unknown>;
         if (exercise.exercise_type === "strength" || exercise.exercise_type === "bodyweight") {
-          const result: Record<string, unknown> = {
+          actual = {
             load_kg: Number(first || exercise.load_kg || exercise.external_load_kg || 0),
           };
           if (exercise.reps_per_set?.length) {
-            result.reps_per_set = (second || exercise.reps_per_set.join(",")).split(",").map(Number);
+            actual.reps_per_set = (second || exercise.reps_per_set.join(",")).split(",").map(Number);
           } else {
-            result.duration_seconds = Math.round(Number(second || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60);
+            actual.duration_seconds = Math.round(Number(second || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60);
           }
-          results[exercise.recommendation_id] = result;
         } else if (exercise.exercise_type === "run") {
-          results[exercise.recommendation_id] = {
+          actual = {
             distance_km: Number(first || exercise.distance_km),
             duration_seconds: Math.round(Number(second || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60),
           };
         } else {
-          results[exercise.recommendation_id] = {
+          actual = {
             duration_seconds: Math.round(Number(first || Math.round((exercise.duration_seconds ?? 0) / 60)) * 60),
             average_power_watts: second ? Number(second) : null,
           };
         }
+        results[exercise.recommendation_id] = {
+          actual,
+          difficulty_1_to_10: difficulties[exercise.recommendation_id]
+            ?? today.workout_status[exercise.recommendation_id]?.difficulty_1_to_10
+            ?? 5,
+        };
       }
       return api(datedPath("/today/workout/complete", today.date), {
         method: "POST",
-        body: JSON.stringify({ results, difficulty_1_to_10: 5, pain_flag: false, notes: notes || null }),
+        body: JSON.stringify({ results, pain_flag: false, notes: notes || null }),
       });
     },
     onSuccess: async () => {
@@ -606,6 +612,22 @@ function WorkoutCard({
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
               <label>{timedStrength ? "Actual timed work, minutes" : strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={timedStrength ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
             </div>}
+            {isRecording && <label className="exercise-difficulty-control" htmlFor={`record-difficulty-${exercise.recommendation_id}`}>
+              <span><b>How hard was this exercise?</b><output htmlFor={`record-difficulty-${exercise.recommendation_id}`}>{selectedDifficulty}<small>/10</small></output></span>
+              <input
+                id={`record-difficulty-${exercise.recommendation_id}`}
+                aria-label={`Difficulty for ${exercise.exercise_name}`}
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value={selectedDifficulty}
+                style={{ "--difficulty-progress": difficultyProgress } as CSSProperties}
+                disabled={workoutLogLocked || complete.isPending}
+                onChange={(event) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: Number(event.target.value) })}
+              />
+              <span className="difficulty-scale" aria-hidden="true"><i>Easy</i><i>Hard</i></span>
+            </label>}
             {!isRecording && <div className="exercise-checkin">
               <label className="exercise-difficulty-control" htmlFor={`difficulty-${exercise.recommendation_id}`}>
                 <span><b>How hard was it?</b><output htmlFor={`difficulty-${exercise.recommendation_id}`}>{selectedDifficulty}<small>/10</small></output></span>

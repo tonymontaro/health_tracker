@@ -9,8 +9,10 @@ from app.core.security import token_digest
 from app.db.models import ApiToken, WorkoutEntry
 from app.db.session import get_db
 from app.main import app
+from app.services.coach import CoachMessage
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.recording_dates import available_recording_dates
+from app.services.workout_feedback import ensure_workout_feedback
 
 
 def test_recommended_exercise_can_be_completed_or_skipped_independently(
@@ -91,3 +93,120 @@ def test_recommended_exercise_can_be_completed_or_skipped_independently(
     assert skipped.json()["difficulty_1_to_10"] is None
     db.refresh(entries[1])
     assert entries[1].status == "planned"
+
+
+def test_batch_completion_records_a_difficulty_for_each_exercise(
+    db: Session, seeded
+) -> None:
+    api_settings = Settings(
+        DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
+        SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
+    )
+    target = next(day for day in available_recording_dates(api_settings) if day.weekday() == 0)
+    generate_daily_plan(db, api_settings, target, use_ai=False)
+    entries = list(
+        db.scalars(
+            select(WorkoutEntry)
+            .where(WorkoutEntry.entry_date == target)
+            .order_by(WorkoutEntry.created_at)
+        )
+    )
+    assert len(entries) >= 2
+    first_id = entries[0].planned_recommendation_id
+    second_id = entries[1].planned_recommendation_id
+    assert first_id and second_id
+
+    raw_token = "test-workout-batch-token"
+    db.add(
+        ApiToken(
+            account_id=seeded.account_id,
+            name="workout batch test",
+            token_hash=token_digest(raw_token, api_settings),
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_settings] = lambda: api_settings
+
+    async def make_request() -> Response:
+        transport = ASGITransport(app=app)
+        headers = {"Authorization": f"Bearer {raw_token}"}
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.post(
+                f"/api/v1/today/workout/complete?date={target.isoformat()}",
+                headers=headers,
+                json={
+                    "results": {
+                        first_id: {
+                            "actual": {"summary": "Completed the first exercise"},
+                            "difficulty_1_to_10": 3,
+                        },
+                        second_id: {
+                            "actual": {"summary": "Completed the second exercise"},
+                            "difficulty_1_to_10": 8,
+                        },
+                    },
+                    "pain_flag": False,
+                    "notes": "Recorded together.",
+                },
+            )
+
+    try:
+        response = asyncio.run(make_request())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    completed = {item["recommendation_id"]: item for item in response.json()}
+    assert completed[first_id]["difficulty_1_to_10"] == 3
+    assert completed[second_id]["difficulty_1_to_10"] == 8
+
+
+def test_coach_feedback_refreshes_after_later_exercise_completion(
+    db: Session, settings: Settings, seeded, monkeypatch
+) -> None:
+    target = next(day for day in available_recording_dates(settings) if day.weekday() == 0)
+    generate_daily_plan(db, settings, target, use_ai=False)
+    entries = list(
+        db.scalars(
+            select(WorkoutEntry)
+            .where(WorkoutEntry.entry_date == target)
+            .order_by(WorkoutEntry.created_at)
+        )
+    )
+    assert len(entries) >= 2
+
+    def feedback_for_state(*args, **kwargs) -> CoachMessage:
+        facts = kwargs["facts"]
+        return CoachMessage(
+            message=f"{facts['matched_count']} planned exercises completed.",
+            story_kind="none",
+            story_topic=None,
+        )
+
+    monkeypatch.setattr("app.services.workout_feedback.coach_response", feedback_for_state)
+
+    entries[0].actual_json = dict(entries[0].prescription_json)
+    entries[0].difficulty_1_to_10 = 4
+    entries[0].status = "completed"
+    entries[0].source = "recommended"
+    db.commit()
+
+    first_feedback = ensure_workout_feedback(db, settings, target)
+    assert first_feedback is not None
+    assert first_feedback.message == "1 planned exercises completed."
+
+    entries[1].actual_json = dict(entries[1].prescription_json)
+    entries[1].difficulty_1_to_10 = 7
+    entries[1].status = "completed"
+    entries[1].source = "recommended"
+    db.commit()
+
+    refreshed_feedback = ensure_workout_feedback(db, settings, target)
+    assert refreshed_feedback is not None
+    assert refreshed_feedback.id == first_feedback.id
+    assert refreshed_feedback.message == "2 planned exercises completed."
+    assert [
+        item["status"] for item in refreshed_feedback.context_snapshot_json["recorded_entries"][:2]
+    ] == ["completed", "completed"]

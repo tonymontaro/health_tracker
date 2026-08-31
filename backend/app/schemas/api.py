@@ -158,9 +158,17 @@ class RegenerationRequest(BaseModel):
         return stripped or None
 
 
-class WorkoutCompletionRequest(BaseModel):
-    results: dict[str, dict[str, Any]]
+class WorkoutCompletionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actual: dict[str, Any] = Field(min_length=1)
     difficulty_1_to_10: int = Field(ge=1, le=10)
+
+
+class WorkoutCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    results: dict[str, WorkoutCompletionResult] = Field(min_length=1, max_length=4)
     pain_flag: bool = False
     notes: str | None = Field(default=None, max_length=2000)
 
