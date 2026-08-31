@@ -173,4 +173,10 @@ def test_regeneration_records_an_optional_high_priority_workout_preference(
     assert regeneration_context["user_preference"] == (
         "I'd prefer an upper-body strength session today"
     )
-    assert "high-priority request" in regeneration_context["preference_priority"]
+    priority = regeneration_context["preference_priority"]
+    instruction = regeneration_context["instruction"]
+    assert "highest-priority workout instruction" in priority
+    assert "ahead of the current target, imported training guide, receding horizon" in priority
+    assert "recovery optimization" in priority
+    assert "implement user_preference first" in instruction
+    assert "recovery optimization" in instruction

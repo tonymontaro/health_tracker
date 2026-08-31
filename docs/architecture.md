@@ -128,7 +128,8 @@ The domain validator enforces consecutive-day variety, distinct meals within a d
 The deterministic fallback applies the same policy when AI planning is unavailable.
 
 Meal and exercise regeneration accept optional free-text preferences.
-The preference is stored in the planning-run context and treated as high priority after safety, allergy, pain, equipment, schedule, and other hard constraints.
+For exercise regeneration, a supplied preference is the athlete's highest-priority workout instruction and takes precedence over the active target, imported guide, receding horizon, recovery optimization, progression heuristics, and ordinary variety. Only non-negotiable pain or medical safety rules, explicit schedule restrictions, unavailable equipment, and exercise-catalog validity can override it; the planner must retain every safe part and name the exact blocker.
+Meal preferences remain high priority after safety, allergy, catalog validity, and other hard constraints.
 Meal regeneration still uses only validated meal templates, and exercise regeneration still uses only available catalog exercises.
 
 ## Inventory and shopping

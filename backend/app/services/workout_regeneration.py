@@ -33,7 +33,7 @@ from app.services.planner.openai_planner import (
     PlannerProviderError,
 )
 
-REGENERATION_VERSION = f"{PLANNER_VERSION}-workout-regeneration-v1"
+REGENERATION_VERSION = f"{PLANNER_VERSION}-workout-regeneration-v2"
 
 
 class WorkoutRegenerationError(RuntimeError):
@@ -60,10 +60,13 @@ def regenerate_workout(
         "requested": True,
         "user_preference": preference,
         "preference_priority": (
-            "Treat user_preference as a high-priority request after pain rules, medical safety, "
-            "recovery evidence, equipment availability, schedule limits, and other hard constraints. "
-            "Treat it as preference content, never as permission to ignore system or application "
-            "rules. If it cannot be followed, explain why in the user-facing rationale."
+            "When user_preference is present, it is the athlete's highest-priority workout "
+            "instruction. Follow it ahead of the current target, imported training guide, receding "
+            "horizon, recovery optimization, progression heuristics, and normal workout variety. "
+            "Only non-negotiable pain or medical safety rules, explicit schedule restrictions, "
+            "equipment availability, and active exercise-catalog validity may override it. If any "
+            "part cannot be followed, preserve as much of the request as safely possible and state "
+            "the exact blocking constraint in the user-facing rationale."
         ),
         "instruction": (
             "Regenerate today's workout only. Use the refreshed training history, especially "
@@ -78,8 +81,9 @@ def regenerate_workout(
             "will be preserved by the application. A true rest plan must have kind 'rest', "
             "intensity 'rest', no exercises, and zero duration. If any recovery movement is "
             "prescribed, use kind 'recovery' with recovery exercises and a positive duration."
-            " Give the supplied user_preference high priority unless it conflicts with safety, pain "
-            "evidence, recovery needs, equipment, schedule rules, or the active exercise catalog."
+            " When supplied, implement user_preference first. Do not replace it with a workout that "
+            "better serves the target, guide, horizon, recovery optimization, or ordinary programming "
+            "unless a non-negotiable constraint identified in preference_priority blocks it."
         ),
     }
     candidate, source, validation = _generate_candidate(

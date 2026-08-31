@@ -499,7 +499,7 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
         <button type="button" className="text-button" aria-expanded={showPreference} aria-controls={`workout-preference-${today.date}`} disabled={regenerate.isPending || disabledReason !== null} onClick={togglePreference}>{showPreference ? "Hide preference" : "Add preference"}</button>
       </div>
       {showPreference && <form className="compact-regeneration-form" id={`workout-preference-${today.date}`} onSubmit={submit}>
-        <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder="For example: upper body or an easy run." /></label>
+        <label>Highest-priority workout preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder="For example: upper body only, or an easy 8 km outdoor run." /></label>
         <button className="primary small" disabled={regenerate.isPending}>{regenerate.isPending ? "Regenerating..." : "Regenerate with preference"}</button>
       </form>}
       {regenerate.error && <p className="error">{regenerate.error.message}</p>}
