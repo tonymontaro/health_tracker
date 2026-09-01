@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
+import type { EntryStatus, Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
 import { MealFigure } from "../components/food/MealFigure";
 import { StatusPill } from "../components/StatusPill";
+import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl";
 
 function datedPath(path: string, date: string): string {
   return `${path}?date=${encodeURIComponent(date)}`;
@@ -584,6 +585,21 @@ function WorkoutCard({
       ]);
     },
   });
+  const difficultyUpdate = useMutation({
+    mutationFn: ({ entryId, difficulty }: { entryId: string; difficulty: number }) =>
+      api(datedPath(`/today/workout/${entryId}/difficulty`, today.date), {
+        method: "PATCH",
+        body: JSON.stringify({ difficulty_1_to_10: difficulty }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
+  });
   if (today.workout.kind === "rest") {
     return <section className="card workout-card"><p className="eyebrow">Training</p><h2>Rest</h2><p>{today.workout.summary}</p></section>;
   }
@@ -599,7 +615,7 @@ function WorkoutCard({
         const timedStrength = strength && !exercise.reps_per_set?.length && Boolean(exercise.duration_seconds);
         const hasEvaluation = recorded && (recorded.difficulty_1_to_10 != null || recorded.pain_flag);
         const selectedDifficulty = difficulties[exercise.recommendation_id] ?? recorded?.difficulty_1_to_10 ?? 5;
-        const difficultyProgress = `${((selectedDifficulty - 1) / 9) * 100}%`;
+        const hasRecordedOutcome = Boolean(recorded?.actual) || status === "completed" || status === "partial";
         const skipped = status === "skipped" || status === "skipped_assumed" || status === "skipped_by_workout_log";
         return (
           <div className="exercise" key={exercise.recommendation_id}>
@@ -612,41 +628,30 @@ function WorkoutCard({
               <label>{strength ? "Actual load kg" : exercise.exercise_type === "run" ? "Actual distance km" : "Actual minutes"}<input value={values[`${exercise.recommendation_id}:first`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:first`]: event.target.value })} placeholder={strength ? String(exercise.load_kg ?? exercise.external_load_kg ?? 0) : String(exercise.distance_km ?? Math.round((exercise.duration_seconds ?? 0) / 60))} /></label>
               <label>{timedStrength ? "Actual timed work, minutes" : strength ? "Actual reps, comma separated" : exercise.exercise_type === "run" ? "Actual minutes" : "Average power, optional"}<input value={values[`${exercise.recommendation_id}:second`] ?? ""} onChange={(event) => setValues({ ...values, [`${exercise.recommendation_id}:second`]: event.target.value })} placeholder={timedStrength ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : strength ? exercise.reps_per_set?.join(",") : exercise.exercise_type === "run" ? String(Math.round((exercise.duration_seconds ?? 0) / 60)) : "watts"} /></label>
             </div>}
-            {isRecording && <label className="exercise-difficulty-control" htmlFor={`record-difficulty-${exercise.recommendation_id}`}>
-              <span><b>How hard was this exercise?</b><output htmlFor={`record-difficulty-${exercise.recommendation_id}`}>{selectedDifficulty}<small>/10</small></output></span>
-              <input
-                id={`record-difficulty-${exercise.recommendation_id}`}
-                aria-label={`Difficulty for ${exercise.exercise_name}`}
-                type="range"
-                min="1"
-                max="10"
-                step="1"
+            {isRecording && <>
+              <WorkoutDifficultyControl
+                inputId={`record-difficulty-${exercise.recommendation_id}`}
+                exerciseName={exercise.exercise_name}
+                label="How hard was this exercise?"
                 value={selectedDifficulty}
-                style={{ "--difficulty-progress": difficultyProgress } as CSSProperties}
-                disabled={workoutLogLocked || complete.isPending}
-                onChange={(event) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: Number(event.target.value) })}
+                disabled={hasRecordedOutcome ? difficultyUpdate.isPending : workoutLogLocked || complete.isPending}
+                onChange={(difficulty) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: difficulty })}
               />
-              <span className="difficulty-scale" aria-hidden="true"><i>Easy</i><i>Hard</i></span>
-            </label>}
+              {hasRecordedOutcome && recorded && <div className="actions"><button type="button" className="quiet small" disabled={difficultyUpdate.isPending} onClick={() => difficultyUpdate.mutate({ entryId: recorded.id, difficulty: selectedDifficulty })}>{difficultyUpdate.isPending ? "Saving..." : "Save difficulty"}</button></div>}
+            </>}
             {!isRecording && <div className="exercise-checkin">
-              <label className="exercise-difficulty-control" htmlFor={`difficulty-${exercise.recommendation_id}`}>
-                <span><b>How hard was it?</b><output htmlFor={`difficulty-${exercise.recommendation_id}`}>{selectedDifficulty}<small>/10</small></output></span>
-                <input
-                  id={`difficulty-${exercise.recommendation_id}`}
-                  aria-label={`Difficulty for ${exercise.exercise_name}`}
-                  type="range"
-                  min="1"
-                  max="10"
-                  step="1"
-                  value={selectedDifficulty}
-                  style={{ "--difficulty-progress": difficultyProgress } as CSSProperties}
-                  disabled={workoutLogLocked || recommendationAction.isPending || status === "completed"}
-                  onChange={(event) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: Number(event.target.value) })}
-                />
-                <span className="difficulty-scale" aria-hidden="true"><i>Easy</i><i>Hard</i></span>
-              </label>
+              <WorkoutDifficultyControl
+                inputId={`difficulty-${exercise.recommendation_id}`}
+                exerciseName={exercise.exercise_name}
+                label="How hard was it?"
+                value={selectedDifficulty}
+                disabled={hasRecordedOutcome ? difficultyUpdate.isPending : workoutLogLocked || recommendationAction.isPending}
+                onChange={(difficulty) => setDifficulties({ ...difficulties, [exercise.recommendation_id]: difficulty })}
+              />
               <div className="exercise-action-buttons">
-                <button type="button" className="primary small" disabled={workoutLogLocked || recommendationAction.isPending || status === "completed"} onClick={() => recommendationAction.mutate({ recommendationId: exercise.recommendation_id, kind: "confirm", difficulty: selectedDifficulty })}>Done</button>
+                {hasRecordedOutcome && recorded
+                  ? <button type="button" className="primary small" disabled={difficultyUpdate.isPending} onClick={() => difficultyUpdate.mutate({ entryId: recorded.id, difficulty: selectedDifficulty })}>{difficultyUpdate.isPending ? "Saving..." : "Save difficulty"}</button>
+                  : <button type="button" className="primary small" disabled={workoutLogLocked || recommendationAction.isPending} onClick={() => recommendationAction.mutate({ recommendationId: exercise.recommendation_id, kind: "confirm", difficulty: selectedDifficulty })}>Done</button>}
                 <button type="button" className="quiet small" disabled={workoutLogLocked || recommendationAction.isPending || skipped} onClick={() => recommendationAction.mutate({ recommendationId: exercise.recommendation_id, kind: "skip", difficulty: selectedDifficulty })}>Skip</button>
               </div>
             </div>}
@@ -657,10 +662,11 @@ function WorkoutCard({
       <div className="actions">
         <button className="primary small" onClick={() => complete.mutate()} disabled={complete.isPending || workoutLogLocked}>Save changed workout</button>
       </div>
-      {workoutLogLocked && <p className="locked-note">Structured actions are locked because this day's workout text is the actual record.</p>}
+      {workoutLogLocked && <p className="locked-note">Changing the workout result is locked because this day's workout text is the actual record. A recorded exercise's difficulty can still be updated above.</p>}
       {complete.error && <p className="error">{complete.error.message}</p>}</>}
-      {!isRecording && workoutLogLocked && <p className="locked-note">Actions are locked because this day's workout text is the actual record.</p>}
+      {!isRecording && workoutLogLocked && <p className="locked-note">Completion and skip actions are locked because this day's workout text is the actual record. Difficulty can still be updated for recorded exercises.</p>}
       {!isRecording && recommendationAction.error && <p className="error">{recommendationAction.error.message}</p>}
+      {difficultyUpdate.error && <p className="error">{difficultyUpdate.error.message}</p>}
       {!isRecording && onAskAlternative && <button className="ink-button" type="button" onClick={onAskAlternative}>Ask for an alternative <span aria-hidden="true">→</span></button>}
     </section>
   );
@@ -792,6 +798,41 @@ function ExerciseLead({ today }: { today: Today }) {
 type RecordKind = "exercise" | "food";
 const RECORD_SHEET_ANIMATION_MS = 300;
 
+function StravaActivityDifficulty({ entry, date }: { entry: EntryStatus; date: string }) {
+  const queryClient = useQueryClient();
+  const [difficulty, setDifficulty] = useState(entry.difficulty_1_to_10 ?? 5);
+  const update = useMutation({
+    mutationFn: () => api(datedPath(`/today/workout/${entry.id}/difficulty`, date), {
+      method: "PATCH",
+      body: JSON.stringify({ difficulty_1_to_10: difficulty }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
+  });
+  return <div className="recorded-activity recorded-activity-difficulty">
+    <div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div>
+    <small>{actualWorkoutText(entry.actual)}</small>
+    <div className="exercise-checkin">
+      <WorkoutDifficultyControl
+        inputId={`strava-difficulty-${entry.id}`}
+        exerciseName={entry.exercise_name ?? "Strava activity"}
+        label="How hard was it?"
+        value={difficulty}
+        disabled={update.isPending}
+        onChange={setDifficulty}
+      />
+      <button type="button" className="primary small" disabled={update.isPending} onClick={() => update.mutate()}>{update.isPending ? "Saving..." : "Save difficulty"}</button>
+    </div>
+    {update.error && <p className="error">{update.error.message}</p>}
+  </div>;
+}
+
 function RecordSheet({
   today,
   kind,
@@ -860,7 +901,7 @@ function RecordSheet({
     </div>
     <div className="record-panel" hidden={kind !== "exercise"}>
       <WorkoutLogCard key={`workout-record-${today.date}`} today={today} />
-      {stravaActivities.length > 0 && <section className="card"><p className="eyebrow">Strava activities</p>{stravaActivities.map((entry) => <div className="recorded-activity" key={entry.id}><div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div><small>{actualWorkoutText(entry.actual)}</small></div>)}</section>}
+      {stravaActivities.length > 0 && <section className="card"><p className="eyebrow">Strava activities</p>{stravaActivities.map((entry) => <StravaActivityDifficulty entry={entry} date={today.date} key={entry.id} />)}</section>}
       {today.workout.kind !== "rest" && <WorkoutCard today={today} mode="record" />}
     </div>
     <div className="record-panel" hidden={kind !== "food"}>

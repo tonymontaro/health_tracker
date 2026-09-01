@@ -155,6 +155,16 @@ def correct_nutrition_entry(
 def correct_workout_entry(
     db: Session, entry: WorkoutEntry, changes: dict[str, Any], as_of: date
 ) -> WorkoutEntry:
+    if (
+        set(changes) == {"difficulty_1_to_10"}
+        and changes["difficulty_1_to_10"] is not None
+    ):
+        return update_workout_difficulty(
+            db,
+            entry,
+            changes["difficulty_1_to_10"],
+            as_of,
+        )
     requested_status = changes.get("status")
     requested_actual = changes.get("actual")
     if requested_status == "completed" and not (requested_actual or entry.actual_json):
@@ -170,6 +180,21 @@ def correct_workout_entry(
             setattr(entry, model_field, changes[field])
     entry.source = "history_correction"
     entry.workout_log_id = None
+    profile = db.scalar(select(UserProfile))
+    if profile:
+        recalculate_derived_summary(db, profile, as_of)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def update_workout_difficulty(
+    db: Session,
+    entry: WorkoutEntry,
+    difficulty_1_to_10: int,
+    as_of: date,
+) -> WorkoutEntry:
+    entry.difficulty_1_to_10 = difficulty_1_to_10
     profile = db.scalar(select(UserProfile))
     if profile:
         recalculate_derived_summary(db, profile, as_of)

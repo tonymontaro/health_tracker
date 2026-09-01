@@ -210,3 +210,76 @@ def test_coach_feedback_refreshes_after_later_exercise_completion(
     assert [
         item["status"] for item in refreshed_feedback.context_snapshot_json["recorded_entries"][:2]
     ] == ["completed", "completed"]
+
+
+def test_completed_strava_exercise_difficulty_can_be_updated_without_replacing_import(
+    db: Session, seeded
+) -> None:
+    api_settings = Settings(
+        DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
+        SESSION_SECRET="test-session-secret-with-more-than-32-characters",
+        _env_file=None,
+    )
+    target = next(day for day in available_recording_dates(api_settings) if day.weekday() == 0)
+    generate_daily_plan(db, api_settings, target, use_ai=False)
+    entry = db.scalar(
+        select(WorkoutEntry)
+        .where(WorkoutEntry.entry_date == target)
+        .order_by(WorkoutEntry.created_at)
+    )
+    assert entry is not None
+    imported_actual = {
+        "distance_km": 6.2,
+        "duration_seconds": 2280,
+        "device_name": "Apple Watch",
+        "completion_evidence": "strava_activity",
+        "strava": {"activity_id": 123456},
+    }
+    entry.actual_json = imported_actual
+    entry.status = "completed"
+    entry.source = "strava"
+
+    raw_token = "test-strava-difficulty-token"
+    db.add(
+        ApiToken(
+            account_id=seeded.account_id,
+            name="strava difficulty test",
+            token_hash=token_digest(raw_token, api_settings),
+        )
+    )
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_settings] = lambda: api_settings
+
+    async def make_requests() -> tuple[Response, Response]:
+        transport = ASGITransport(app=app)
+        headers = {"Authorization": f"Bearer {raw_token}"}
+        path = f"/api/v1/today/workout/{entry.id}/difficulty?date={target.isoformat()}"
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            updated = await client.patch(
+                path,
+                headers=headers,
+                json={"difficulty_1_to_10": 8},
+            )
+            invalid = await client.patch(
+                path,
+                headers=headers,
+                json={"difficulty_1_to_10": 11},
+            )
+        return updated, invalid
+
+    try:
+        updated, invalid = asyncio.run(make_requests())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert updated.status_code == 200
+    assert updated.json()["difficulty_1_to_10"] == 8
+    assert updated.json()["source"] == "strava"
+    assert updated.json()["status"] == "completed"
+    assert updated.json()["actual"] == imported_actual
+    assert invalid.status_code == 422
+    db.refresh(entry)
+    assert entry.difficulty_1_to_10 == 8
+    assert entry.source == "strava"
+    assert entry.actual_json == imported_actual

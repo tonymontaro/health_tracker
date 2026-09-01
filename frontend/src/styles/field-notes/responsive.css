@@ -83,7 +83,7 @@
   .food-log-submit, .section-heading, .inventory-detail-heading, .shopping-editor-heading, .inventory-editor-actions, .purchase-actions, .history-entry { align-items: stretch; flex-direction: column; }
   .food-log-submit small { max-width: none; }
   .workout-editor-grid, .actual-grid, .form-grid, .inventory-fields, .quantity-editor, .recipe-columns { grid-template-columns: 1fr; }
-  .exercise-checkin { grid-template-columns: 1fr; gap: 0.8rem; }
+  .exercise-checkin, .history-difficulty-editor { grid-template-columns: 1fr; gap: 0.8rem; }
   .exercise-action-buttons button { flex: 1; }
   .exercise-heading { align-items: flex-start; flex-direction: column; }
   .chat-composer { grid-template-columns: 1fr; }

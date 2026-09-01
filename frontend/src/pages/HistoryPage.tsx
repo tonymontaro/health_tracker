@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import type { DailyFoodLog, DailyWorkoutLog, EntryStatus } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
+import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl";
 
 type HistorySection = "nutrition" | "exercise";
 
@@ -134,10 +135,12 @@ function ExerciseHistory({
   day,
   onPatch,
   onRecord,
+  pending,
 }: {
   day: HistoryDay;
   onPatch: (id: string, payload: Record<string, unknown>) => void;
   onRecord: (entry: EntryStatus) => void;
+  pending: boolean;
 }) {
   return (
     <>
@@ -147,12 +150,46 @@ function ExerciseHistory({
         {day.workouts.length === 0 && <p>No exercise was recorded for this day.</p>}
         {day.workouts.map((entry) => {
           const activityId = stravaActivityId(entry);
-          const hasEvaluation = entry.difficulty_1_to_10 != null || entry.pain_flag;
-          return <div className="history-entry" key={entry.id}><div><div className="history-entry-title"><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} /></div><span className={`provenance ${activityId ? "provenance-strava" : ""}`}>{sourceLabel(entry)}</span>{workoutActualText(entry.actual) && <small>{workoutActualText(entry.actual)}</small>}{hasEvaluation && <div className="meta recorded-evaluation">{entry.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {entry.difficulty_1_to_10}/10</span>}{entry.pain_flag && <span>Pain recorded</span>}</div>}{entry.notes && <p className="recorded-notes"><strong>Notes:</strong> {entry.notes}</p>}{activityId && <a className="strava-link" href={`https://www.strava.com/activities/${activityId}`} target="_blank" rel="noreferrer">View activity on Strava</a>}</div><div className="actions"><button className="quiet small" onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div></div>;
+          const hasEvaluation = entry.difficulty_1_to_10 != null || Boolean(entry.pain_flag);
+          return <HistoryWorkoutEntry entry={entry} activityId={activityId} hasEvaluation={hasEvaluation} pending={pending} onPatch={onPatch} onRecord={onRecord} key={`${entry.id}:${entry.difficulty_1_to_10 ?? "unset"}`} />;
         })}
       </section>
     </>
   );
+}
+
+function HistoryWorkoutEntry({
+  entry,
+  activityId,
+  hasEvaluation,
+  pending,
+  onPatch,
+  onRecord,
+}: {
+  entry: EntryStatus;
+  activityId: number | null;
+  hasEvaluation: boolean;
+  pending: boolean;
+  onPatch: (id: string, payload: Record<string, unknown>) => void;
+  onRecord: (entry: EntryStatus) => void;
+}) {
+  const [difficulty, setDifficulty] = useState(entry.difficulty_1_to_10 ?? 5);
+  const hasRecordedOutcome = Boolean(entry.actual) || entry.status === "completed" || entry.status === "partial";
+  return <div className="history-entry">
+    <div>
+      <div className="history-entry-title"><strong>{entry.exercise_name ?? "Exercise"}</strong><StatusPill status={entry.status} /></div>
+      <span className={`provenance ${activityId ? "provenance-strava" : ""}`}>{sourceLabel(entry)}</span>
+      {workoutActualText(entry.actual) && <small>{workoutActualText(entry.actual)}</small>}
+      {hasEvaluation && <div className="meta recorded-evaluation">{entry.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {entry.difficulty_1_to_10}/10</span>}{entry.pain_flag && <span>Pain recorded</span>}</div>}
+      {entry.notes && <p className="recorded-notes"><strong>Notes:</strong> {entry.notes}</p>}
+      {activityId && <a className="strava-link" href={`https://www.strava.com/activities/${activityId}`} target="_blank" rel="noreferrer">View activity on Strava</a>}
+      {hasRecordedOutcome && <div className="history-difficulty-editor">
+        <WorkoutDifficultyControl inputId={`history-difficulty-${entry.id}`} exerciseName={entry.exercise_name ?? "Exercise"} label="Difficulty" value={difficulty} disabled={pending} onChange={setDifficulty} />
+        <button type="button" className="quiet small" disabled={pending} onClick={() => onPatch(entry.id, { difficulty_1_to_10: difficulty })}>Save difficulty</button>
+      </div>}
+    </div>
+    <div className="actions"><button className="quiet small" onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div>
+  </div>;
 }
 
 export function HistoryPage({ section }: { section: HistorySection }) {
@@ -167,7 +204,14 @@ export function HistoryPage({ section }: { section: HistorySection }) {
   const day = useQuery({ queryKey: ["history", selectedDate], queryFn: () => api<HistoryDay>(`/history/${selectedDate}`), enabled: Boolean(selectedDate) });
   const patch = useMutation({
     mutationFn: ({ type, id, payload }: { type: "nutrition" | "workout"; id: string; payload: Record<string, unknown> }) => api(`/history/${selectedDate}/${type}/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["history"] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
   });
 
   if (history.isLoading) return <div className="loading" role="status">Loading history...</div>;
@@ -192,7 +236,7 @@ export function HistoryPage({ section }: { section: HistorySection }) {
           {day.data && <>
             {section === "nutrition"
               ? <NutritionHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "nutrition", id, payload })} />
-              : <ExerciseHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={(entry) => { patch.reset(); setEditingWorkout(entry); }} />}
+              : <ExerciseHistory day={day.data} pending={patch.isPending} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={(entry) => { patch.reset(); setEditingWorkout(entry); }} />}
             {day.data.profile_snapshot && <section className="card compact"><p className="eyebrow">Profile at recommendation time</p><p>{day.data.profile_snapshot.short_summary}</p></section>}
             {day.data.original_plan && <details className="card"><summary>Original daily recommendation</summary><pre>{JSON.stringify(day.data.original_plan, null, 2)}</pre></details>}
           </>}

@@ -70,6 +70,30 @@ def test_history_correction_preserves_original_daily_plan(
     assert workout.source == "history_correction"
 
 
+def test_difficulty_only_history_update_preserves_workout_provenance(
+    db: Session, settings: Settings, seeded
+) -> None:
+    generate_daily_plan(db, settings, TARGET, use_ai=False)
+    workout = db.scalar(
+        select(WorkoutEntry)
+        .where(WorkoutEntry.entry_date == TARGET)
+        .order_by(WorkoutEntry.created_at)
+    )
+    assert workout is not None
+    actual = {"distance_km": 5.5, "completion_evidence": "strava_activity"}
+    workout.actual_json = actual
+    workout.status = "completed"
+    workout.source = "strava"
+    db.commit()
+
+    correct_workout_entry(db, workout, {"difficulty_1_to_10": 9}, TARGET)
+
+    assert workout.difficulty_1_to_10 == 9
+    assert workout.actual_json == actual
+    assert workout.status == "completed"
+    assert workout.source == "strava"
+
+
 def test_failed_ai_planning_reaches_fallback(db: Session, monkeypatch, seeded) -> None:
     settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",

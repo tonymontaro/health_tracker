@@ -177,6 +177,12 @@ class WorkoutRecommendationCompletionRequest(BaseModel):
     difficulty_1_to_10: int = Field(default=5, ge=1, le=10)
 
 
+class WorkoutDifficultyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    difficulty_1_to_10: int = Field(ge=1, le=10)
+
+
 class ManualNutritionRequest(BaseModel):
     meal_slot: str
     description: str = Field(min_length=1, max_length=1000)

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.schemas.api import (
     RegenerationRequest,
     ReplaceRecommendationRequest,
     WorkoutCompletionRequest,
+    WorkoutDifficultyUpdate,
     WorkoutRecommendationCompletionRequest,
 )
 from app.schemas.food_log import FoodLogRequest, FoodLogResponse
@@ -38,7 +40,12 @@ from app.services.food_log import (
     process_daily_food_log,
     serialize_food_log,
 )
-from app.services.history import replace_recommendation, serialize_nutrition, serialize_workout
+from app.services.history import (
+    replace_recommendation,
+    serialize_nutrition,
+    serialize_workout,
+    update_workout_difficulty,
+)
 from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 from app.services.nutrition_regeneration import (
@@ -447,6 +454,33 @@ def complete_workout(
         recalculate_derived_summary(db, profile, target)
     db.commit()
     return [serialize_workout(item) for item in changed]
+
+
+@router.patch("/workout/{entry_id}/difficulty")
+def patch_workout_difficulty(
+    entry_id: UUID,
+    payload: WorkoutDifficultyUpdate,
+    target_date: date | None = Query(default=None, alias="date"),
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    target = _recording_date(settings, target_date)
+    entry = db.get(WorkoutEntry, entry_id)
+    if entry is None or entry.entry_date != target:
+        raise HTTPException(status_code=404, detail="Workout entry not found")
+    if entry.actual_json is None and entry.status not in {"completed", "partial"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Difficulty can only be evaluated after an exercise has been recorded.",
+        )
+    updated = update_workout_difficulty(
+        db,
+        entry,
+        payload.difficulty_1_to_10,
+        current_recording_date(settings),
+    )
+    return serialize_workout(updated)
 
 
 @router.post("/workout/{recommendation_id}/confirm")

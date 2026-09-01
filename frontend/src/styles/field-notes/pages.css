@@ -124,6 +124,7 @@
 .exercise-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; }
 .prescription { margin: 0.5rem 0; color: var(--red-dark); font-size: 1.1rem; }
 .exercise-checkin { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 1.5rem; margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--line-light); }
+.recorded-activity-difficulty > .exercise-checkin { display: grid; align-items: end; }
 .exercise-difficulty-control { gap: 0; }
 .exercise-difficulty-control > span:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .exercise-difficulty-control b { color: var(--ink); font: 700 var(--fn-type-label) var(--sans); letter-spacing: 0.1em; text-transform: uppercase; }
@@ -210,6 +211,7 @@
 .history-detail { display: grid; gap: 1rem; }
 .history-entry { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .history-entry > div:first-child { display: grid; gap: 0.35rem; }
+.history-difficulty-editor { display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: end; gap: 1rem; margin-top: 0.5rem; }
 .strava-link { display: flex; align-items: center; width: fit-content; min-height: 44px; color: var(--red-dark); font: 700 var(--fn-type-label) var(--sans); text-decoration: underline; text-underline-offset: 3px; text-transform: uppercase; }
 .correction-sheet form { display: grid; gap: 1.2rem; }
 .inventory-tabs { display: flex; gap: 2.5rem; padding-top: 1.1rem; border-bottom: 1px solid var(--ink); }
