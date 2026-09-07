@@ -23,11 +23,9 @@ def test_reconciliation_assumes_main_meals_and_workouts_were_skipped(
     result = reconcile_day(db, TARGET)
     meals = list(db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == TARGET)))
     workouts = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET)))
-    assert result["assumed_skipped_meals"] == 2
-    assert all(
-        item.status == "skipped_assumed" for item in meals if item.meal_slot.startswith("meal")
-    )
-    assert all(item.status == "planned" for item in meals if item.meal_slot in {"fruit", "snack"})
+    assert result["assumed_skipped_meals"] == 1
+    assert all(item.status == "skipped_assumed" for item in meals if item.expected)
+    assert all(item.status == "planned" for item in meals if not item.expected)
     assert all(item.status == "skipped_assumed" for item in workouts)
 
 

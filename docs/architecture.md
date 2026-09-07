@@ -123,7 +123,8 @@ It asks OpenAI for fourteen consecutive days beginning on a Monday using `OPENAI
 The planner may repair one invalid result before using a validated deterministic fallback, whose source is visible in the Meals page.
 Python checks date coverage, catalog membership, allergies, meal count, consecutive-day variety, and cooking effort before storing a week.
 Monday through Saturday meals must take at most 20 hands-on minutes, 30 total minutes, and an effort score of two.
-Sunday permits one special meal, with any second meal kept easy.
+Each date has exactly one main meal and one distinct optional meal.
+Sunday permits a special main meal, while the optional meal stays easy every day.
 All recipe quantities and preparation steps describe one serving, without implicit batch multiplication.
 
 Meal and exercise regeneration accept optional free-text preferences.
@@ -136,18 +137,32 @@ Approved changes to today's meals are audited in `plan_modification` and reflect
 `weekly_meal_plan` stores one stable Monday-Sunday recipe document per week, its provider source, validation results, and generation context.
 Missing weeks are generated in pairs of complete weeks.
 A unique Monday date and conflict-safe insertion prevent concurrent requests from replacing a saved week.
-The user-facing window includes the current week through the Sunday covering today plus thirteen days, so a midweek view includes three calendar weeks.
+The earliest saved meal Monday anchors fixed fourteen-day shopping periods.
+The user-facing window contains complete pairs of weeks, from the current period through the period covering today plus thirteen days.
+It therefore shows two weeks on the first Monday and four weeks otherwise, retaining the current order through its second Monday.
+Missing pairs use the same cadence, including backfills across year boundaries.
 Daily planning and the existing shopping job fill this window automatically.
-The authenticated, CSRF-protected `POST /api/v1/meals/plan` also fills missing weeks and returns the calendar with shopping lists.
+The authenticated, CSRF-protected `POST /api/v1/meals/plan` also fills missing weeks and returns periods, each containing two calendar weeks and one combined shopping list.
 
 Daily planning uses the saved nutrition document verbatim, including recipe quantities, fruit, and optional snacks, while training continues to adapt separately.
 Already-created daily plans remain canonical; calendar serialization overlays their current recommendations and flags differences from the saved week.
-The weekly shopping list is derived from exactly the meals and extras displayed in that calendar response.
+The two-week shopping list is derived from the displayed main meals, fruit, and snacks, including nuts.
+The existing `expected` flag distinguishes the main meal (`meal_1`, true) from the optional meal (`meal_2`, false), with `expected_main_meals=1`.
+Optional meals never contribute grocery quantities or manual-check notes.
+Fruit and snacks contribute regardless of their `expected` flag, which controls adherence rather than purchasing.
+The default extras include two pieces of fruit, a 200 g protein snack, and 20 g of nuts per day when compatible with allergies.
+Saved weeks gain the nut snack on read, while active daily plans receive an audited addition without changing their originals or historical actuals.
+Daily overrides retain shopping metadata for unchanged extras and parse changed quantities, preserving unparseable quantities as manual-check notes.
+Optional-only recipe changes do not flag an order as changed.
+The calendar also offers a copyable AI search prompt for verified Swiss product links, pack counts, current prices, and delivery requirements, with a manual-copy fallback for both actions.
+Existing saved weeks are adapted on read without replacing their recipe documents.
+Active daily plans receive an idempotent audited role update, preserving original JSON, history before today, and actual statuses, quantities, and provenance.
+Optional meals remain recordable but are excluded from expected-meal adherence and automatic missed-meal reconciliation.
 Identical ingredients and compatible units are summed using decimal arithmetic.
 Cooked grain and pulse weights remain explicitly cooked weights and the copyable list recommends ready-cooked or cooked/drained products rather than implying those are dry weights.
 Legacy recipe quantities that cannot be parsed remain visible as manual-check notes instead of disappearing from the list.
 There is no fixed basket, speculative pricing, retailer threshold padding, purchase status, or stock subtraction.
-Lists include delivery-by-Monday guidance and frozen options for ingredients needed later in the week.
+Lists include delivery by the first Monday and frozen options for ingredients needed later in the fortnight.
 
 Inventory models, endpoints, ingestion, provider configuration, UI, and recording side effects have been removed.
 The migration renames old stock and purchase tables to `retired_inventory_item` and `retired_shopping_plan` for offline rollback only.

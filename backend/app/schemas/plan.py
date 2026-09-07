@@ -66,7 +66,7 @@ class NutritionPlanProposal(BaseModel):
 
     @model_validator(mode="after")
     def meal_count_matches(self) -> "NutritionPlanProposal":
-        actual = 1 + int(self.meal_2 is not None)
+        actual = int(self.meal_1.expected) + int(self.meal_2 is not None and self.meal_2.expected)
         if actual != self.expected_main_meals:
             raise ValueError("expected_main_meals must match the supplied main meals")
         return self

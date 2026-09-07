@@ -164,7 +164,9 @@ def calculate_nutrition_summary(db: Session, as_of: date) -> dict[str, Any]:
     planned_mains = [
         entry
         for entry in entries
-        if entry.planned_recommendation_id is not None and entry.meal_slot in {"meal_1", "meal_2"}
+        if entry.planned_recommendation_id is not None
+        and entry.meal_slot in {"meal_1", "meal_2"}
+        and entry.expected
     ]
     followed_planned_mains = [
         entry

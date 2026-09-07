@@ -284,7 +284,7 @@
 .meal-calendar-day.is-today { border-top: 3px solid currentColor; }
 .meal-calendar-day.is-past { opacity: 0.75; }
 .meal-calendar-day > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
-.meal-calendar-day h3 { margin: 0 0 1rem; }
+.meal-calendar-day h4 { margin: 0 0 1rem; }
 .meal-calendar-day > header > span, .meal-plan-notice { font-size: 0.85rem; }
 .meal-day-recipes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .meal-planned-recipe { padding: 1rem; border: 1px solid var(--line); }
@@ -315,3 +315,6 @@
 }
 .meal-calendar { padding-top: 2rem; }
 .meal-calendar a { text-decoration: underline; text-underline-offset: 4px; }
+
+.meal-copy-actions { display: grid; gap: 0.6rem; }
+.meal-calendar-week-heading { margin: 1.5rem 0 1rem; }

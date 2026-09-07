@@ -125,7 +125,7 @@ function NutritionHistory({
       <section className="card">
         <p className="eyebrow">Food & nutrition</p>
         {day.nutrition.length === 0 && <p>No food or nutrition entries were recorded for this day.</p>}
-        {day.nutrition.map((entry) => <div className="history-entry" key={entry.id}><div><div className="history-entry-title"><strong>{entry.description}</strong><StatusPill status={entry.status} /></div><small>{entry.source.replaceAll("_", " ")}</small></div>{!("matched_by_food_log" === entry.status || "discarded_by_food_log" === entry.status) && <div className="actions"><button className="quiet small" onClick={() => onPatch(entry.id, { status: "confirmed" })}>Confirm</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div>}</div>)}
+        {day.nutrition.map((entry) => <div className="history-entry" key={entry.id}><div><div className="history-entry-title"><strong>{entry.description}</strong><StatusPill status={entry.status} /></div><small>{entry.recommendation_id && entry.meal_slot?.startsWith("meal_") ? `${entry.expected ? "Main meal" : "Optional meal"} · ` : ""}{entry.source.replaceAll("_", " ")}</small></div>{!("matched_by_food_log" === entry.status || "discarded_by_food_log" === entry.status) && <div className="actions"><button className="quiet small" onClick={() => onPatch(entry.id, { status: "confirmed" })}>Confirm</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div>}</div>)}
       </section>
     </>
   );

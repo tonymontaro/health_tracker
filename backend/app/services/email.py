@@ -256,11 +256,25 @@ def morning_email(
     plan: dict[str, Any], app_url: str, coach_note: str | None = None
 ) -> tuple[str, str, str]:
     nutrition = plan["nutrition"]
-    meal_sections = [meal_text("Meal 1", nutrition["meal_1"])]
-    meal_html_sections = [meal_html("Meal 1", nutrition["meal_1"])]
+    meal_sections = [meal_text("Main meal", nutrition["meal_1"])]
+    meal_html_sections = [meal_html("Main meal", nutrition["meal_1"])]
     if nutrition.get("meal_2"):
-        meal_sections.append(meal_text("Meal 2", nutrition["meal_2"]))
-        meal_html_sections.append(meal_html("Meal 2", nutrition["meal_2"]))
+        meal_sections.append(
+            meal_text(
+                "Second main meal"
+                if nutrition["meal_2"].get("expected", True)
+                else "Optional meal / buy on the day",
+                nutrition["meal_2"],
+            )
+        )
+        meal_html_sections.append(
+            meal_html(
+                "Second main meal"
+                if nutrition["meal_2"].get("expected", True)
+                else "Optional meal / buy on the day",
+                nutrition["meal_2"],
+            )
+        )
     fruit_items = [
         " ".join(str(value) for value in [item.get("quantity"), item["name"]] if value)
         for item in nutrition["fruits"]

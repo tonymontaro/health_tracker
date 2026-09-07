@@ -15,7 +15,11 @@ from app.db.models import (
 )
 from app.schemas.plan import DailyPlanDocument, canonicalize_proposal
 from app.schemas.two_week_plan import parse_two_week_plan_document
-from app.services.meal_planning import ensure_meal_weeks, scheduled_nutrition
+from app.services.meal_planning import (
+    apply_current_meal_roles,
+    ensure_meal_weeks,
+    scheduled_nutrition,
+)
 from app.services.planner.context import (
     build_daily_planner_context,
     build_profile_snapshot,
@@ -51,6 +55,8 @@ def generate_daily_plan(
     if profile is None:
         raise RuntimeError("Profile has not been seeded")
     ensure_meal_weeks(db, settings, plan_date, use_ai=use_ai)
+    if existing:
+        apply_current_meal_roles(db, current_recording_date(settings))
     nutrition = scheduled_nutrition(db, plan_date)
     if existing and horizon and horizon_uses_active_training_plan_guide(db, horizon, profile):
         return existing
@@ -147,7 +153,8 @@ def generate_daily_plan(
             raise RuntimeError(f"Deterministic fallback is invalid: {fallback_errors}")
 
     proposal.shopping.summary = (
-        "Copy each Monday-Sunday shopping list from the Meals page and arrange delivery by Monday."
+        "Copy the two-week shopping list for main meals, fruit, snacks and nuts from Meals. "
+        "Arrange delivery by the first Monday; buy optional meal ingredients on the day if wanted."
     )
     proposal.shopping.retailer = "Either"
     proposal.shopping.mode = "none"
@@ -159,7 +166,7 @@ def generate_daily_plan(
         + ", ".join(
             m.template_name for m in [proposal.nutrition.meal_1, proposal.nutrition.meal_2] if m
         ),
-        "One-serving recipes and their weekly shopping quantities stay stable as training adapts.",
+        "One-serving main meals and their two-week shopping quantities stay stable as training adapts.",
     ]
     document = canonicalize_proposal(
         proposal,

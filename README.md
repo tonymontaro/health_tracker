@@ -1,8 +1,9 @@
 # Health Autopilot
 
 Health Autopilot is a single-user personal health and hybrid training planner.
-It produces one low-friction daily plan with one or two main meals, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
-The Meals page maintains at least fourteen days of recipes in complete Monday-Sunday weeks, with a copyable shopping list for each week.
+It produces one low-friction daily plan with one main meal, one optional meal, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
+The Meals page maintains at least fourteen days of recipes in fixed Monday-based two-week periods, with one copyable shopping list per period.
+Each shopping list also has a copyable AI search prompt for finding Swiss products, pack quantities, prices, and purchase links.
 Training retains a rolling fourteen-day AI horizon, a seven-day exercise outlook, and near-term adaptation from recorded outcomes.
 An optional dated training-plan CSV can be uploaded in Settings and becomes high-priority guidance for workout, recovery, meal, and fueling recommendations.
 Uploading another CSV replaces the active guide without rewriting existing daily-plan history.
@@ -16,13 +17,19 @@ Pain, illness, injury, and safety feedback remains serious.
 
 Meal recommendations rotate simple, nutrient-dense recipes that support running, cycling, and strength training.
 Monday through Saturday recipes take at most 20 hands-on minutes and 30 minutes total.
-More adventurous cooking is reserved for Sundays, with any second meal kept easy.
-Weekly groceries are calculated from the exact single-serving recipes, fruit, and optional snacks, including cooked-weight labels where applicable.
-Complete weeks remain stable after generation so daily workout adaptation does not invalidate an order.
+More adventurous cooking is reserved for Sunday main meals, with optional meals kept easy.
+Two-week groceries cover the exact single-serving main recipes plus the listed fruit, snacks, and nuts, including cooked-weight labels where applicable.
+Optional meals are excluded; buy their ingredients on the day if wanted.
+The default extras include two pieces of fruit, a 200 g protein snack, and 20 g of nuts per day when compatible with allergies.
+These extras are included in shopping but remain optional to eat.
+Leaving an optional meal unrecorded does not count as missed meal adherence.
+Complete two-week orders remain stable after generation so daily workout adaptation does not invalidate an order.
 Inventory tracking and purchase bookkeeping have been removed.
 The Today page also accepts optional high-priority preferences when regenerating meals or exercise.
-The Food page links to the meal calendar and weekly shopping lists.
-Midweek, the calendar includes a third complete week to retain at least fourteen days ahead.
+The Food page links to the meal calendar and two-week shopping lists.
+After the first Monday, the calendar also shows the next complete two-week period to retain at least fourteen days ahead.
+The current period and its shopping quantities stay fixed through the second Monday.
+The earliest saved meal week anchors the two-week cadence; older single-week records are paired without regenerating their recipes.
 A collapsed seven-day exercise outlook can be regenerated with an optional preference without changing the saved meal calendar.
 
 ## Architecture
@@ -133,7 +140,9 @@ Seed operations are idempotent.
 After upgrading to calendar meal planning, run `make migrate` before starting the API or scheduler.
 The migration creates `weekly_meal_plan` and retires the old stock and purchase tables as offline archives for reversible rollback.
 The app no longer reads, writes, or exposes those archives.
-Existing daily recommendations and recorded history remain unchanged.
+Original daily recommendations and recorded history remain unchanged.
+The one-main-plus-optional update reuses existing JSON fields and needs no additional database migration.
+Active daily recommendations receive an audited role update; historical plans and explicit actual results are preserved.
 
 ## Import Garmin activity history
 

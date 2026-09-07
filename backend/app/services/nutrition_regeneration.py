@@ -28,6 +28,7 @@ from app.services.planner.fallback import build_fallback_plan
 from app.services.planner.meal_recipes import simple_meal_recipe
 from app.services.planner.meal_selection import (
     eligible_main_meal_templates,
+    is_easy_meal,
     is_special_meal,
     special_meal_required_today,
 )
@@ -66,7 +67,9 @@ def regenerate_nutrition(
     context = build_nutrition_regeneration_context(db, profile, snapshot, plan.plan_date)
     context["nutrition_regeneration"] = {
         "requested": True,
-        "required_main_meal_count": len(current_meals),
+        "required_main_meal_count": current.nutrition.expected_main_meals,
+        "required_suggestion_count": len(current_meals),
+        "meal_roles": ["main" if meal.expected else "optional" for meal in current_meals],
         "forbidden_main_meal_templates": sorted(forbidden_names),
         "preserved_workout": current.workout.model_dump(mode="json"),
         "user_preference": preference,
@@ -77,10 +80,11 @@ def regenerate_nutrition(
             "user-facing rationale."
         ),
         "instruction": (
-            "Regenerate the scheduled main meals only. The emergency protein plate remains an "
+            "Regenerate the main and optional meal suggestions. The emergency protein plate remains an "
             "optional fallback and must not be scheduled as Meal 1 or Meal 2. Never repeat either "
-            "currently scheduled meal. When there are two meals, make Meal 1 genuinely quick and "
-            "easy. Only on Sundays may Meal 2 be a special, higher-effort option. "
+            "currently scheduled meal. Preserve the supplied meal_roles and their expected flags. "
+            "The optional meal is always quick and easy and excluded from the shopping list. "
+            "Only on Sundays may the main meal be a special, higher-effort option. "
             "Monday to Saturday both meals must be simple and quick. The preserved_workout is "
             "today's scheduled workout and must remain unchanged. Tailor meal selection, carbohydrate "
             "availability, protein support, suggested timing, and nutrition guidance to its type, "
@@ -170,7 +174,8 @@ def _generate_candidate(
                 return candidate, "openai", validation
             correction = {
                 "instruction": context["nutrition_regeneration"]["instruction"],
-                "required_main_meal_count": len(_main_meals(current)),
+                "required_main_meal_count": current.nutrition.expected_main_meals,
+                "required_suggestion_count": len(_main_meals(current)),
                 "forbidden_main_meal_templates": sorted(forbidden_names),
                 "errors": errors,
             }
@@ -182,6 +187,8 @@ def _generate_candidate(
         forbidden_names,
         len(_main_meals(current)),
         context["nutrition_regeneration"]["user_preference"],
+        optional_second=current.nutrition.meal_2 is not None
+        and not current.nutrition.meal_2.expected,
     )
     errors = _candidate_errors(db, candidate, current, profile, forbidden_names)
     validation["fallback_errors"] = errors
@@ -224,11 +231,15 @@ def _candidate_errors(
         and selected_templates[0] is not None
         and selected_templates[1] is not None
     ):
-        easy, nicer = selected_templates[0], selected_templates[1]
-        if easy.effort_score > 2 or easy.hands_on_minutes > 20:
-            errors.append("Meal 1 must be the quick, easy-to-prepare option.")
-        if nicer.effort_score <= easy.effort_score:
-            errors.append("Meal 2 must be the more special, higher-effort option.")
+        if current.nutrition.meal_2 and not current.nutrition.meal_2.expected:
+            if not is_easy_meal(selected_templates[1]):
+                errors.append("The optional meal must be quick and easy.")
+        else:
+            easy, nicer = selected_templates[0], selected_templates[1]
+            if not is_easy_meal(easy):
+                errors.append("Meal 1 must be the quick, easy-to-prepare option.")
+            if nicer.effort_score <= easy.effort_score:
+                errors.append("Meal 2 must be the more special, higher-effort option.")
     try:
         merged = _merge_candidate(current, candidate, "openai")
     except ValueError as exc:
@@ -245,6 +256,8 @@ def _deterministic_candidate(
     forbidden_names: set[str],
     meal_count: int,
     preference: str | None,
+    *,
+    optional_second: bool = False,
 ) -> DailyPlanProposal:
     base = build_fallback_plan(db, plan_date)
     forbidden_folded = {name.casefold() for name in forbidden_names}
@@ -269,11 +282,7 @@ def _deterministic_candidate(
         )
 
     easy = sorted(
-        (
-            template
-            for template in templates
-            if template.effort_score <= 2 and template.hands_on_minutes <= 20
-        ),
+        (template for template in templates if is_easy_meal(template)),
         key=selection_key,
     )
     specials = sorted(
@@ -287,6 +296,10 @@ def _deterministic_candidate(
             selected = [ranked[0]]
     elif plan_date.weekday() != 6:
         selected = ranked[:meal_count]
+    elif optional_second:
+        first = specials[0] if specials else easy[0]
+        second = next(template for template in easy if template.name != first.name)
+        selected = [first, second]
     else:
         first = easy[0] if easy else ranked[0]
         higher_effort = [
@@ -322,13 +335,15 @@ def _deterministic_candidate(
         )
         for index, template in enumerate(selected)
     ]
+    if optional_second and len(meals) == 2:
+        meals[1].expected = False
     base.nutrition = NutritionPlanProposal(
         meal_1=meals[0],
         meal_2=meals[1] if len(meals) == 2 else None,
         fruits=base.nutrition.fruits,
         snacks=base.nutrition.snacks,
-        expected_main_meals=2 if meal_count == 2 else 1,
-        approximate_protein_g=min(350, sum(meal.estimated_protein_g for meal in meals) + 30),
+        expected_main_meals=2 if meal_count == 2 and not optional_second else 1,
+        approximate_protein_g=sum(meal.estimated_protein_g for meal in meals if meal.expected),
         guidance=(
             f"Simple meals with adventurous cooking reserved for Sunday, selected alongside "
             f"today's {base.workout.kind} training demand. Both differ from the prior recommendations, "
@@ -405,12 +420,16 @@ def _merge_candidate(
         payload["nutrition"][key] = {
             **new_meal.model_dump(mode="json"),
             "recommendation_id": old_meal.recommendation_id,
+            "expected": old_meal.expected,
         }
-    payload["nutrition"]["expected_main_meals"] = len(candidate_meals)
-    payload["nutrition"]["approximate_protein_g"] = candidate.nutrition.approximate_protein_g
+    payload["nutrition"]["expected_main_meals"] = current.nutrition.expected_main_meals
+    payload["nutrition"]["approximate_protein_g"] = sum(
+        new.estimated_protein_g
+        for old, new in zip(current_meals, candidate_meals, strict=True)
+        if old.expected
+    )
     payload["nutrition"]["guidance"] = candidate.nutrition.guidance
     payload["prep_actions"] = [item.model_dump(mode="json") for item in candidate.prep_actions]
-    payload["shopping"] = candidate.shopping.model_dump(mode="json")
     payload["rationale"]["nutrition_factors"] = candidate.rationale.nutrition_factors
     assumptions = list(payload["assumptions"])
     note = "Scheduled main meals were regenerated at the user's request."

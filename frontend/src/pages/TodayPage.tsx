@@ -783,7 +783,7 @@ function TodayEditionHeader({ today, section }: { today: Today; section: "food" 
       <div className="food-brief">
         <p className="eyebrow">Today's food</p>
         <h1>{today.nutrition.guidance}</h1>
-        <div className="edition-brief-facts"><span>{today.nutrition.expected_main_meals} {today.nutrition.expected_main_meals === 1 ? "meal" : "meals"}</span><span>Approx. {today.nutrition.approximate_protein_g} g protein</span><span>{today.recovery_status.replaceAll("_", " ")} recovery</span></div>
+        <div className="edition-brief-facts"><span>{today.nutrition.expected_main_meals} {today.nutrition.expected_main_meals === 1 ? "main meal" : "main meals"}</span><span>Main meals: approx. {today.nutrition.approximate_protein_g} g protein</span><span>{today.recovery_status.replaceAll("_", " ")} recovery</span></div>
       </div>
       <div className={`source-stamp source-${today.source}`}><span>Source</span><strong>{sourceLabel(today.source)}</strong></div>
     </div>}
@@ -1026,14 +1026,14 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
       </nav>
         <label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label>
       </div>
-      {isFood && !isHistorical && <section className="card"><p className="eyebrow">Plan ahead</p><h2>Plan your next two weeks</h2><p>Simple meals, Sunday cooking and a copyable shopping list for every week.</p><NavLink to="/meals">Open meal calendar & shopping lists →</NavLink></section>}
+      {isFood && !isHistorical && <section className="card"><p className="eyebrow">Plan ahead</p><h2>Plan your next two weeks</h2><p>One main meal a day, an optional idea and one shopping list for each fixed two-week period.</p><NavLink to="/meals">Open meal calendar & shopping lists →</NavLink></section>}
       {!isFood && <ExerciseLead today={data} />}
       <FolioRule label={isFood ? "Today's table" : "Session detail"} number="02" />
       <div className="today-grid">
         <div className="main-column">
           {isFood ? <>
-            <MealCard meal={data.nutrition.meal_1} slot="Meal 1" index={1} today={data} />
-            {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot="Meal 2" index={2} today={data} />}
+            <MealCard meal={data.nutrition.meal_1} slot="Main meal" index={1} today={data} />
+            {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot={data.nutrition.meal_2.expected ? "Second main meal" : "Optional meal / buy on the day"} index={2} today={data} />}
           </> : <>
             <WorkoutCard key={`structured-${data.date}`} today={data} onAskAlternative={isHistorical ? undefined : () => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
           </>}
@@ -1046,7 +1046,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
           </> : <>{!isHistorical && <WorkoutRegenerationCard today={data} />}<section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section></>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
-          {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>View the next two weeks of meals and copy a shopping list for each Monday-Sunday week.</p><NavLink to="/meals">Meal calendar & shopping lists →</NavLink></section>}
+          {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>Copy your two-week shopping list with main meals, fruit, snacks and nuts, or an AI prompt to find products and links. Optional meals are bought on the day.</p><NavLink to="/meals">Meal calendar & shopping lists →</NavLink></section>}
         </aside>
       </div>
       <ChatPanel key={`${data.date}-${alternativeQuestion}`} initialQuestion={alternativeQuestion} canAsk={!isHistorical} selectedDate={data.date} />

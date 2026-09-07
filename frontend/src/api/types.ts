@@ -11,6 +11,8 @@ export type EntryStatus = {
   pain_flag?: boolean;
   notes?: string | null;
   quantity?: Record<string, unknown>;
+  expected?: boolean;
+  meal_slot?: string;
   food_log_id?: string | null;
   workout_log_id?: string | null;
 };

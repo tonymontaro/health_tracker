@@ -2,14 +2,31 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.two_week_plan import TwoWeekNutritionGuidance
+
+class MealNutritionSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_meal_template_name: str
+    optional_meal_template_name: str
+    focus: str
+    fueling_recommendations: list[str] = Field(max_length=4)
+
+    @property
+    def meal_template_names(self) -> list[str]:
+        return [self.main_meal_template_name, self.optional_meal_template_name]
+
+    @model_validator(mode="after")
+    def distinct_meals(self) -> "MealNutritionSelection":
+        if self.main_meal_template_name.casefold() == self.optional_meal_template_name.casefold():
+            raise ValueError("The main and optional meals must be distinct")
+        return self
 
 
 class MealPlanSelection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan_date: date
-    nutrition: TwoWeekNutritionGuidance
+    nutrition: MealNutritionSelection
 
 
 class MealPlanProposal(BaseModel):

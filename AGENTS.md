@@ -126,7 +126,7 @@ When the owner-host tunnel is active:
 
 - There is one canonical plan per Zurich-local date.
 - Meals use stable Monday-Sunday `weekly_meal_plan` records with at least fourteen days visible, including a complete final week.
-- Shopping quantities come from the displayed single-serving recipes, fruit, and optional snacks.
+- Shopping quantities come from the displayed single-serving main recipes, fruit, and snacks, including nuts. Optional meals are excluded.
 - Monday to Saturday meals require at most 20 hands-on minutes and 30 total minutes; involved cooking is Sunday-only.
 - Daily workout adaptation preserves the saved meals; approved daily meal changes must appear in both the calendar and its shopping list.
 - Inventory is removed from runtime behavior; `retired_*` tables are offline migration archives only.
@@ -137,8 +137,9 @@ When the owner-host tunnel is active:
 - Re-analysis replaces only entries owned by the prior diary; preserve Strava imports and later History corrections.
 - Pain blocks automatic progression.
 - Thursday is rest or very-light recovery; rest is a valid workout-plan option and contains no exercises.
-- Active workouts require measurable targets. At most four exercises and one or two main meals are allowed.
+- Active workouts require measurable targets. At most four exercises are allowed. New meal calendars use one expected main meal and one optional meal per day; legacy daily plans may retain two expected meals.
 - The optional Settings training-plan CSV is the active external planning guide. A replacement upload supersedes the prior guide without rewriting existing daily-plan history.
+- Shopping periods are fixed Monday-based fortnights anchored to the earliest saved meal week. Main meals, fruit, and snacks (including nuts) contribute to their shopping lists; optional meals are excluded.
 - Raw Strava location data must never enter AI context.
 - OpenAI calls use `store=false`; keep provider models configurable through settings rather than scattering model names.
 

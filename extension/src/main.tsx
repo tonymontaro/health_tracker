@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 type Settings = { apiUrl: string; appUrl: string; token: string };
-type Meal = { recommendation_id: string; template_name: string };
+type Meal = { recommendation_id: string; template_name: string; expected: boolean };
 type Exercise = { recommendation_id: string; exercise_name: string; exercise_type: string; distance_km?: number; pace_seconds_per_km?: number; duration_seconds?: number; load_kg?: number; external_load_kg?: number; reps_per_set?: number[] };
 type Today = { current_status: string; nutrition: { meal_1: Meal; meal_2: Meal | null; fruits: Array<{ name: string }> }; workout: { kind: string; title: string; exercises: Exercise[] }; next_action: { action: string } | null; shopping: { action_needed: boolean; summary: string }; nutrition_status: Record<string, { status: string }> };
 
@@ -78,7 +78,7 @@ export function App() {
     <header><span className="mark">HA</span><div><small>Personal field notes / Today</small><h1>Daily notes</h1></div><button className="icon" aria-label="Open extension settings" onClick={() => setConfigured(false)}>•••</button></header>
     <section className="status-card"><small>Current status</small><p>{today.current_status}</p></section>
     <section className="training"><small>Exercise first</small><strong>{today.workout.kind === "rest" ? "Rest" : today.workout.title}</strong>{exercises.map((item) => <p key={item.recommendation_id}>{item.exercise_name}<br /><span>{exerciseLine(item)}</span></p>)}</section>
-    <section><small>Food</small><div className="row"><div><strong>{today.nutrition.meal_1.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_1.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_1)}>Done</button></div>{today.nutrition.meal_2 && <div className="row"><div><strong>{today.nutrition.meal_2.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_2.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_2!)}>Done</button></div>}</section>
+    <section><small>Food</small><div className="row"><div><strong>{today.nutrition.meal_1.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_1.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_1)}>Done</button></div>{today.nutrition.meal_2 && <div className="row"><div><small>{today.nutrition.meal_2.expected ? "Second main meal" : "Optional / buy on the day"}</small><strong>{today.nutrition.meal_2.template_name}</strong><em>{today.nutrition_status[today.nutrition.meal_2.recommendation_id]?.status ?? "planned"}</em></div><button onClick={() => void confirm(today.nutrition.meal_2!)}>Done</button></div>}</section>
     <section><small>Fruit</small><p>{today.nutrition.fruits.map((item) => item.name).join(" · ")}</p></section>
     <section className="next"><small>Next action</small><strong>{today.next_action?.action ?? "Nothing needed"}</strong></section>
     {today.shopping.action_needed && <p className="warning">Shopping: {today.shopping.summary}</p>}

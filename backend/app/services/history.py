@@ -101,7 +101,7 @@ def reconcile_day(db: Session, target_date: date) -> dict[str, int]:
     )
     assumed_skipped_meals = 0
     for entry in meals:
-        if entry.meal_slot in {"meal_1", "meal_2"} or entry.expected:
+        if entry.expected:
             entry.status = "skipped_assumed"
             assumed_skipped_meals += 1
     workouts = list(
@@ -274,6 +274,8 @@ def replace_recommendation(
     found = _replace_in_payload(payload, recommendation_id, replacement)
     if found is None:
         raise LookupError("Recommendation was not found in the active plan")
+    if "expected" in found and "expected" in replacement:
+        replacement = {**replacement, "expected": found["expected"]}
     try:
         document = DailyPlanDocument.model_validate(payload)
     except ValidationError as exc:
@@ -323,6 +325,8 @@ def _replace_in_payload(
             stable_id = candidate["recommendation_id"]
             candidate.update(replacement)
             candidate["recommendation_id"] = stable_id
+            if "expected" in original:
+                candidate["expected"] = original["expected"]
             return original
     return None
 
