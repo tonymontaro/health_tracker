@@ -49,6 +49,10 @@ function dateLabel(value: string, weekday = false) {
 }
 
 function shoppingResearchPrompt(period: MealPeriod): string {
+  const items = period.shopping.items
+    .map((item) => `${item.food_name}: ${item.quantity_label}`)
+    .join("\n");
+
   return `Please browse the web and turn this two-week shopping list into specific products I can buy in Zurich, Switzerland.
 
 Find products at Swiss online grocery retailers such as Migros or Coop, preferably from one retailer for a single delivery.
@@ -65,7 +69,7 @@ For every listed ingredient:
 Return a concise Markdown table with: Requested ingredient, Recommended product, Pack size, Packs to buy, Price, Subtotal, Direct link, Notes.
 Then give the estimated basket total, delivery fees if verified, any items needing clarification, and availability that depends on postcode.
 
-${period.shopping.copy_text}`;
+${items}`;
 }
 
 function ShoppingList({ period }: { period: MealPeriod }) {
