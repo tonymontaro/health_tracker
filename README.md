@@ -2,7 +2,8 @@
 
 Health Autopilot is a single-user personal health and hybrid training planner.
 It produces one low-friction daily plan with one or two main meals, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
-It also maintains a rolling fourteen-day AI planning horizon, commits the next seven days for review, and adapts today and tomorrow from recorded outcomes.
+The Meals page maintains at least fourteen days of recipes in complete Monday-Sunday weeks, with a copyable shopping list for each week.
+Training retains a rolling fourteen-day AI horizon, a seven-day exercise outlook, and near-term adaptation from recorded outcomes.
 An optional dated training-plan CSV can be uploaded in Settings and becomes high-priority guidance for workout, recovery, meal, and fueling recommendations.
 Uploading another CSV replaces the active guide without rewriting existing daily-plan history.
 
@@ -13,11 +14,16 @@ Coach Forge keeps a demanding, evidence-grounded coaching voice while using occa
 Brief humorous or motivational stories are optional rather than daily, enter a four-day cooldown after use, and are checked against compact recent-message and story-topic history to reduce repetition.
 Pain, illness, injury, and safety feedback remains serious.
 
-Meal recommendations avoid consecutive-day template repeats when alternatives exist, favor easy nutrient-dense food by default, and include a more ambitious curated meal at least weekly.
-Inventory can improve convenience and reduce waste, but missing ingredients do not prevent a meal from being recommended.
+Meal recommendations rotate simple, nutrient-dense recipes that support running, cycling, and strength training.
+Monday through Saturday recipes take at most 20 hands-on minutes and 30 minutes total.
+More adventurous cooking is reserved for Sundays, with any second meal kept easy.
+Weekly groceries are calculated from the exact single-serving recipes, fruit, and optional snacks, including cooked-weight labels where applicable.
+Complete weeks remain stable after generation so daily workout adaptation does not invalidate an order.
+Inventory tracking and purchase bookkeeping have been removed.
 The Today page also accepts optional high-priority preferences when regenerating meals or exercise.
-Collapsed seven-day outlooks appear at the bottom of the Food and Exercise pages.
-Each outlook can be regenerated with an optional preference, creating an auditable new revision while leaving today's canonical daily plan unchanged.
+The Food page links to the meal calendar and weekly shopping lists.
+Midweek, the calendar includes a third complete week to retain at least fourteen days ahead.
+A collapsed seven-day exercise outlook can be regenerated with an optional preference without changing the saved meal calendar.
 
 ## Architecture
 
@@ -88,11 +94,10 @@ Important groups are:
 - PostgreSQL: `DATABASE_URL`
 - Public URLs: `APP_BASE_URL`, `API_BASE_URL`
 - Time: `APP_TIMEZONE`
-- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_INVENTORY_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
+- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
 - Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID`, `STRAVA_INITIAL_SYNC_DAYS`, `STRAVA_SYNC_LOOKBACK_DAYS`, `STRAVA_SYNC_INTERVAL_MINUTES`
 - Email: `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`
 - Security: `SESSION_SECRET`, `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, `EXTENSION_API_TOKEN`
-- Shopping: `COOP_ONLINE_MINIMUM_CHF`, `MIGROS_ONLINE_MINIMUM_CHF`
 
 Do not commit `.env` or any API token.
 
@@ -124,6 +129,11 @@ Seed the user profile, equipment, exercise catalog, foods, and 25 curated meal t
 ```
 
 Seed operations are idempotent.
+
+After upgrading to calendar meal planning, run `make migrate` before starting the API or scheduler.
+The migration creates `weekly_meal_plan` and retires the old stock and purchase tables as offline archives for reversible rollback.
+The app no longer reads, writes, or exposes those archives.
+Existing daily recommendations and recorded history remain unchanged.
 
 ## Import Garmin activity history
 
@@ -206,7 +216,9 @@ Generate a plan manually:
 .venv/bin/health-autopilot plan --date 2026-08-09
 ```
 
-Daily generation first creates that date's immutable fourteen-day horizon revision, then uses it to guide the canonical daily plan.
+Daily generation ensures complete meal weeks are available, creates that date's immutable training horizon revision, then creates the canonical daily plan using the saved meals.
+The meal calendar also fills missing weeks when opened, so it works without a running scheduler.
+The existing Sunday shopping job ensures upcoming meal weeks are ready.
 
 Force deterministic fallback planning:
 
@@ -221,7 +233,7 @@ Run individual idempotent jobs:
 .venv/bin/health-autopilot job morning-email --date 2026-08-09
 .venv/bin/health-autopilot job evening-email --date 2026-08-09
 .venv/bin/health-autopilot job finalize --date 2026-08-09
-.venv/bin/health-autopilot job shopping --date 2026-08-04
+.venv/bin/health-autopilot job shopping --date 2026-08-10
 ```
 
 ### Run the scheduler in the foreground
@@ -321,7 +333,7 @@ Application history remains in PostgreSQL and API calls use `store=false`.
 
 The Today page accepts a short free-text description of the food and drinks consumed that day.
 After successful AI extraction, every nutrition recommendation for that date is marked as matched or discarded and separate actual meal entries are stored with estimated average portions.
-Submitting revised text replaces only the prior AI-derived entries for that day and safely reverses their inventory deltas before applying the new ones.
+Submitting revised text replaces only the prior diary-owned entries for that day, preserving actuals corrected later in History.
 The original daily plan remains immutable.
 If OpenAI is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
 

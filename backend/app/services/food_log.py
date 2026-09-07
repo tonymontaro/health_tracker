@@ -15,7 +15,6 @@ from app.db.models import (
     UserProfile,
 )
 from app.schemas.food_log import FoodLogExtraction, FoodLogResponse
-from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 
 FOOD_LOG_SYSTEM_PROMPT = """Interpret one free-text food diary for a single calendar day.
@@ -200,8 +199,6 @@ def process_daily_food_log(
                 db.scalars(select(NutritionEntry).where(NutritionEntry.food_log_id == food_log.id))
             )
             for entry in generated_entries:
-                if entry.status in {"confirmed", "assumed_consumed"}:
-                    adjust_nutrition_entry_inventory(db, entry, direction=1)
                 db.delete(entry)
 
         matched_ids = {
@@ -210,8 +207,6 @@ def process_daily_food_log(
             if meal.matched_recommendation_id
         }
         for entry in planned_entries:
-            if entry.status in {"confirmed", "assumed_consumed"}:
-                adjust_nutrition_entry_inventory(db, entry, direction=1)
             entry.status = (
                 "matched_by_food_log"
                 if entry.planned_recommendation_id in matched_ids
@@ -246,7 +241,6 @@ def process_daily_food_log(
                 food_log_id=food_log.id,
             )
             db.add(entry)
-            adjust_nutrition_entry_inventory(db, entry, direction=-1)
 
         profile = db.scalar(select(UserProfile))
         if profile:

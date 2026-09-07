@@ -20,7 +20,6 @@ from app.schemas.plan import (
     MealProposal,
     MealRecommendation,
     NutritionPlanProposal,
-    PrepAction,
     proposal_from_document,
 )
 from app.services.planner.context import build_nutrition_regeneration_context
@@ -81,14 +80,13 @@ def regenerate_nutrition(
             "Regenerate the scheduled main meals only. The emergency protein plate remains an "
             "optional fallback and must not be scheduled as Meal 1 or Meal 2. Never repeat either "
             "currently scheduled meal. When there are two meals, make Meal 1 genuinely quick and "
-            "easy, and use Meal 2 as the more special, higher-effort option; variety and enjoyment "
-            "matter more than the normal low-effort preference for Meal 2. The preserved_workout is "
+            "easy. Only on Sundays may Meal 2 be a special, higher-effort option. "
+            "Monday to Saturday both meals must be simple and quick. The preserved_workout is "
             "today's scheduled workout and must remain unchanged. Tailor meal selection, carbohydrate "
             "availability, protein support, suggested timing, and nutrition guidance to its type, "
             "intensity, duration, and expected difficulty. A rest or recovery day should not be "
             "fuelled like a hard endurance day. Use only supplied meal templates and do not invent "
-            "precise nutrient values that are absent from the context. Do not restrict choices to "
-            "current inventory; assume missing ingredients can be purchased. Give the supplied "
+            "precise nutrient values that are absent from the context. Give the supplied "
             "user_preference high priority unless it conflicts with allergies, safety, hard plan "
             "rules, or the available catalog."
         ),
@@ -221,7 +219,8 @@ def _candidate_errors(
     }
     selected_templates = [templates.get(name.casefold()) for name in names]
     if (
-        len(selected_templates) == 2
+        current.plan_date.weekday() == 6
+        and len(selected_templates) == 2
         and selected_templates[0] is not None
         and selected_templates[1] is not None
     ):
@@ -286,6 +285,8 @@ def _deterministic_candidate(
             selected = [specials[0]]
         else:
             selected = [ranked[0]]
+    elif plan_date.weekday() != 6:
+        selected = ranked[:meal_count]
     else:
         first = easy[0] if easy else ranked[0]
         higher_effort = [
@@ -329,23 +330,12 @@ def _deterministic_candidate(
         expected_main_meals=2 if meal_count == 2 else 1,
         approximate_protein_g=min(350, sum(meal.estimated_protein_g for meal in meals) + 30),
         guidance=(
-            f"Meal 1 is the easy option and Meal 2 is the more special option, selected alongside "
+            f"Simple meals with adventurous cooking reserved for Sunday, selected alongside "
             f"today's {base.workout.kind} training demand. Both differ from the prior recommendations, "
             "and the emergency plate remains optional."
         ),
     )
-    batch_template = next((template for template in selected if template.batch_size > 1), None)
-    base.prep_actions = (
-        [
-            PrepAction(
-                action=f"Batch prepare {batch_template.batch_size} servings of {batch_template.name}",
-                active_minutes=batch_template.hands_on_minutes,
-                when="Today",
-            )
-        ]
-        if batch_template
-        else []
-    )
+    base.prep_actions = []
     base.rationale.nutrition_factors = [
         f"Regenerated main meals: {', '.join(template.name for template in selected)}",
         (
@@ -393,7 +383,7 @@ def _proposal_from_template(template: MealTemplate, suggested_window: str) -> Me
         estimated_fiber_g=template.estimated_fiber_g,
         hands_on_minutes=template.hands_on_minutes,
         ingredients=[f"{item['quantity']} {item['name']}" for item in template.ingredients_json],
-        preparation=simple_meal_recipe(template),
+        preparation=simple_meal_recipe(template, single_serving=True),
     )
 
 

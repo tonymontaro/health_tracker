@@ -159,7 +159,4 @@ def test_regeneration_prioritizes_and_records_an_optional_meal_preference(
     assert run.context_snapshot_json["nutrition_regeneration"]["user_preference"] == (
         "I'd prefer an egg-based, high-protein meal today"
     )
-    assert (
-        "Do not restrict recommendations"
-        in run.context_snapshot_json["meal_selection_policy"]["inventory_policy"]
-    )
+    assert "current_inventory" not in run.context_snapshot_json

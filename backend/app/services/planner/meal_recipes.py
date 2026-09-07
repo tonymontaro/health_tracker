@@ -114,7 +114,7 @@ RECIPE_STEPS: dict[str, tuple[str, ...]] = {
 }
 
 
-def simple_meal_recipe(template: MealTemplate) -> str:
+def simple_meal_recipe(template: MealTemplate, *, single_serving: bool = False) -> str:
     steps = list(RECIPE_STEPS.get(template.name, ()))
     if not steps:
         ingredient_names = (
@@ -125,7 +125,7 @@ def simple_meal_recipe(template: MealTemplate) -> str:
             f"Prepare any raw items among {ingredient_names} until safely cooked.",
             "Warm or chop the remaining ingredients as appropriate, combine them, and serve.",
         ]
-    if template.batch_size > 1:
+    if template.batch_size > 1 and not single_serving:
         steps.insert(
             0,
             f"For {template.batch_size} servings, multiply each listed quantity by {template.batch_size}.",

@@ -5,7 +5,7 @@ const primaryLinks = [
   { to: "/today/exercise", label: "Exercise" },
   { to: "/today/food", label: "Food" },
   { to: "/history", label: "History" },
-  { to: "/inventory", label: "Inventory" },
+  { to: "/meals", label: "Meals" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -33,7 +33,7 @@ export function Layout() {
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, []);
   function openRecorder() {
-    const kind = location.pathname.includes("food") || location.pathname.includes("nutrition") ? "food" : "exercise";
+    const kind = location.pathname.includes("food") || location.pathname.includes("nutrition") || location.pathname === "/meals" ? "food" : "exercise";
     const current = new URLSearchParams(location.search);
     const next = new URLSearchParams({ record: kind });
     const date = current.get("date");

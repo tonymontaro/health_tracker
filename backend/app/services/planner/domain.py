@@ -9,6 +9,7 @@ from app.schemas.plan import DailyPlanProposal, ExerciseProposal
 from app.schemas.two_week_plan import TwoWeekPlanProposal
 from app.services.planner.meal_selection import (
     eligible_main_meal_templates,
+    is_easy_meal,
     is_special_meal,
     recommended_main_meal_history,
     special_meal_required_today,
@@ -133,6 +134,12 @@ def validate_plan(
             errors.append(f"Unknown meal template: {meal.template_name}.")
             continue
         selected_templates.append(template)
+        if (
+            enforce_meal_selection_policy
+            and plan_date.weekday() != 6
+            and not is_easy_meal(template)
+        ):
+            errors.append(f"Meal {template.name}: involved cooking is allowed on Sundays only.")
         meal_terms = {item["name"].casefold() for item in template.ingredients_json} | {
             template.name.casefold(),
             template.description.casefold(),

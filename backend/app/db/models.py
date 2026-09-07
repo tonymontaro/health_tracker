@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -430,40 +429,14 @@ class PlanModification(UUIDPrimaryKeyMixin, Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "inventory_item"
-    __table_args__ = (
-        CheckConstraint(
-            "food_item_id IS NOT NULL OR (custom_name IS NOT NULL AND btrim(custom_name) <> '')",
-            name="identity",
-        ),
-    )
+class WeeklyMealPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "weekly_meal_plan"
 
-    food_item_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("food_item.id"), unique=True, nullable=True
-    )
-    custom_name: Mapped[str | None] = mapped_column(String(160))
-    item_type: Mapped[str] = mapped_column(String(40), default="ingredient")
-    notes: Mapped[str | None] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(String(40), default="manual")
-    quantity_estimate: Mapped[float | None] = mapped_column(Float)
-    quantity_label: Mapped[str | None] = mapped_column(String(80))
-    unit: Mapped[str] = mapped_column(String(40))
-    confidence: Mapped[str] = mapped_column(String(20), default="low")
-    expires_on: Mapped[date | None] = mapped_column(Date)
-    location: Mapped[str] = mapped_column(String(40), default="pantry")
-
-
-class ShoppingPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "shopping_plan"
-    __table_args__ = (UniqueConstraint("week_start", "retailer", "mode"),)
-
-    week_start: Mapped[date] = mapped_column(Date, index=True)
-    retailer: Mapped[str] = mapped_column(String(40))
-    mode: Mapped[str] = mapped_column(String(20))
-    estimated_total_chf: Mapped[float] = mapped_column(Float)
-    items_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
-    status: Mapped[str] = mapped_column(String(30), default="draft")
+    week_start: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    source: Mapped[str] = mapped_column(String(40))
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    context_snapshot_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    validation_result_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
 
 class NotificationEvent(UUIDPrimaryKeyMixin, Base):

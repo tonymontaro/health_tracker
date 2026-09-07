@@ -130,9 +130,7 @@ def test_fallback_avoids_yesterdays_meals_and_validator_rejects_a_repeat(
     assert any("repeats yesterday's recommendation" in error for error in errors)
 
 
-def test_fallback_requires_a_special_meal_when_none_was_recently_recommended(
-    db: Session, seeded
-) -> None:
+def test_fallback_reserves_special_meals_for_sunday(db: Session, seeded) -> None:
     plan = build_fallback_plan(db, MONDAY)
     selected_names = {
         plan.nutrition.meal_1.template_name,
@@ -142,8 +140,16 @@ def test_fallback_requires_a_special_meal_when_none_was_recently_recommended(
         db.scalars(select(MealTemplate).where(MealTemplate.name.in_(selected_names)))
     )
 
-    assert any("special" in template.tags for template in selected_templates)
+    assert not any("special" in template.tags for template in selected_templates)
     assert validate_plan(db, plan, seeded, MONDAY) == []
+    sunday = date(2026, 8, 16)
+    plan = build_fallback_plan(db, sunday)
+    assert validate_plan(db, plan, seeded, sunday) == []
+    names = [m.template_name for m in [plan.nutrition.meal_1, plan.nutrition.meal_2] if m]
+    assert any(
+        "special" in t.tags
+        for t in db.scalars(select(MealTemplate).where(MealTemplate.name.in_(names)))
+    )
 
 
 def test_more_than_four_exercises_is_schema_invalid(db: Session, seeded) -> None:

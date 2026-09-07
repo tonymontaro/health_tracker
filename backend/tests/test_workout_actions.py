@@ -95,9 +95,7 @@ def test_recommended_exercise_can_be_completed_or_skipped_independently(
     assert entries[1].status == "planned"
 
 
-def test_batch_completion_records_a_difficulty_for_each_exercise(
-    db: Session, seeded
-) -> None:
+def test_batch_completion_records_a_difficulty_for_each_exercise(db: Session, seeded) -> None:
     api_settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",

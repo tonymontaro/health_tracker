@@ -46,7 +46,6 @@ from app.services.history import (
     serialize_workout,
     update_workout_difficulty,
 )
-from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 from app.services.nutrition_regeneration import (
     NutritionRegenerationError,
@@ -302,8 +301,6 @@ def confirm_nutrition(
     target = _recording_date(settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
-    if entry.status not in {"confirmed", "assumed_consumed"}:
-        adjust_nutrition_entry_inventory(db, entry, direction=-1)
     entry.status = "confirmed"
     profile = db.scalar(select(UserProfile))
     if profile:
@@ -323,8 +320,6 @@ def skip_nutrition(
     target = _recording_date(settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
-    if entry.status in {"confirmed", "assumed_consumed"}:
-        adjust_nutrition_entry_inventory(db, entry, direction=1)
     entry.status = "skipped"
     profile = db.scalar(select(UserProfile))
     if profile:

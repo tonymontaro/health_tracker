@@ -13,7 +13,7 @@ from app.services.planner.context import build_qa_context
 
 QA_SYSTEM_PROMPT = f"""{COACH_CHARACTER_PROMPT}
 Answer questions about today's personal health and hybrid training plan.
-Use only the supplied profile, plan, history, inventory, and constraints.
+Use only the supplied profile, plan, history, and constraints.
 Be concise, practical, and conversational. Use dry humor sparingly when it helps, but keep the answer
 and next action central. A brief story is optional. Decide for yourself when one would materially improve
 motivation, encouragement, or make the coaching lesson memorable; the athlete does not need to ask.

@@ -18,7 +18,6 @@ from app.db.models import (
 )
 from app.schemas.plan import DailyPlanDocument, proposal_from_document
 from app.services.food_log import serialize_food_log
-from app.services.inventory import adjust_nutrition_entry_inventory
 from app.services.metrics import recalculate_derived_summary
 from app.services.planner.domain import validate_plan
 from app.services.workout_log import serialize_workout_log
@@ -128,22 +127,14 @@ def reconcile_day(db: Session, target_date: date) -> dict[str, int]:
 def correct_nutrition_entry(
     db: Session, entry: NutritionEntry, changes: dict[str, Any], as_of: date
 ) -> NutritionEntry:
-    old_consumed = entry.status in {"confirmed", "assumed_consumed"}
-    quantity_changed = "quantity" in changes and changes["quantity"] is not None
-    if old_consumed and quantity_changed:
-        adjust_nutrition_entry_inventory(db, entry, direction=1)
     if "description" in changes and changes["description"] is not None:
         entry.description = changes["description"]
     if "quantity" in changes and changes["quantity"] is not None:
         entry.quantity_json = changes["quantity"]
     if "status" in changes and changes["status"] is not None:
         entry.status = changes["status"]
-    new_consumed = entry.status in {"confirmed", "assumed_consumed"}
-    if new_consumed and quantity_changed:
-        adjust_nutrition_entry_inventory(db, entry, direction=-1)
-    elif old_consumed != new_consumed:
-        adjust_nutrition_entry_inventory(db, entry, direction=-1 if new_consumed else 1)
     entry.source = "history_correction"
+    entry.food_log_id = None
     profile = db.scalar(select(UserProfile))
     if profile:
         recalculate_derived_summary(db, profile, as_of)
@@ -155,10 +146,7 @@ def correct_nutrition_entry(
 def correct_workout_entry(
     db: Session, entry: WorkoutEntry, changes: dict[str, Any], as_of: date
 ) -> WorkoutEntry:
-    if (
-        set(changes) == {"difficulty_1_to_10"}
-        and changes["difficulty_1_to_10"] is not None
-    ):
+    if set(changes) == {"difficulty_1_to_10"} and changes["difficulty_1_to_10"] is not None:
         return update_workout_difficulty(
             db,
             entry,

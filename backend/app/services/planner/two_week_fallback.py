@@ -17,6 +17,7 @@ from app.schemas.two_week_plan import (
 from app.services.planner.fallback import build_fallback_plan
 from app.services.planner.meal_selection import (
     eligible_main_meal_templates,
+    is_easy_meal,
     is_special_meal,
     recommended_main_meal_history,
     special_meal_required_today,
@@ -77,7 +78,12 @@ def build_fallback_two_week_plan(
             workout_adapted = True
             rationale = "Moved the missed session intent forward by one day."
 
-        if prior_day and not workout_adapted:
+        eligible_names = {t.name for t in eligible_main_meal_templates(db, profile, plan_date)}
+        if (
+            prior_day
+            and not workout_adapted
+            and set(prior_day.nutrition.meal_template_names) <= eligible_names
+        ):
             nutrition = prior_day.nutrition
             for name in nutrition.meal_template_names:
                 meal_counts[name.casefold()] += 1
@@ -260,7 +266,7 @@ def _nutrition_guidance(
             easy = sorted(
                 ordinary,
                 key=lambda template: (
-                    0 if template.effort_score <= 2 and template.hands_on_minutes <= 20 else 1,
+                    0 if is_easy_meal(template) else 1,
                     rank(template),
                 ),
             )

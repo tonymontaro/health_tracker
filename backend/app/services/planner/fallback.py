@@ -531,7 +531,7 @@ def build_fallback_plan(
             action_needed=False,
             retailer="Either",
             mode="none",
-            summary="Buy any missing ingredients; inventory does not constrain meal selection.",
+            summary="Buy any missing ingredients; weekly lists cover the planned recipes.",
             estimated_total_chf=0,
             items=[],
         ),
@@ -544,7 +544,7 @@ def build_fallback_plan(
             nutrition_factors=[
                 "Recent meal recommendations are rotated to prevent consecutive repeats",
                 "Easy meals remain the default, with a special higher-effort meal at least weekly",
-                "Protein, fiber, and produce guide quality independently of current inventory",
+                "Protein, fiber, and produce guide quality across the planned week",
             ],
             recovery_factors=["Difficulty target remains moderate", "Pain stops progression"],
             scheduling_factors=[f"{weekday} schedule rules applied"],
@@ -556,7 +556,7 @@ def build_fallback_plan(
             ],
         ),
         assumptions=[
-            "Inventory confidence may be incomplete",
+            "Seasonings can be adjusted to taste",
             "Optional fruit and snacks are not assumed consumed",
         ],
     )

@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./components/auth";
 import { Layout } from "./components/Layout";
 import { HistoryPage } from "./pages/HistoryPage";
-import { InventoryPage } from "./pages/InventoryPage";
+import { MealPlanPage } from "./pages/MealPlanPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TodayPage } from "./pages/TodayPage";
@@ -25,8 +25,8 @@ export default function App() {
         <Route path="/history" element={<Navigate to="/history/exercise" replace />} />
         <Route path="/history/nutrition" element={<HistoryPage section="nutrition" />} />
         <Route path="/history/exercise" element={<HistoryPage section="exercise" />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/shopping" element={<Navigate to="/inventory" replace />} />
+        <Route path="/meals" element={<MealPlanPage />} />
+        <Route path="/shopping" element={<Navigate to="/meals" replace />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/today/exercise" replace />} />

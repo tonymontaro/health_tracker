@@ -14,8 +14,6 @@ from app.core.security import token_digest
 from app.db.models import (
     ApiToken,
     DailyFoodLog,
-    FoodItem,
-    InventoryItem,
     NutritionEntry,
 )
 from app.db.session import get_db
@@ -113,9 +111,7 @@ class FailingExtractor:
         raise FoodLogExtractionError("provider unavailable")
 
 
-def test_food_log_replaces_actual_meals_and_inventory_atomically(
-    db: Session, settings: Settings, seeded
-) -> None:
+def test_food_log_replaces_actual_meals_atomically(db: Session, settings: Settings, seeded) -> None:
     plan = generate_daily_plan(db, settings, TARGET, use_ai=False)
     original_plan = deepcopy(plan.original_plan_json)
     planned = list(
@@ -128,18 +124,6 @@ def test_food_log_replaces_actual_meals_and_inventory_atomically(
     )
     first_id = planned[0].planned_recommendation_id
     assert first_id
-    chicken = db.scalar(select(FoodItem).where(FoodItem.name == "Chicken breast"))
-    assert chicken
-    inventory = InventoryItem(
-        food_item_id=chicken.id,
-        quantity_estimate=500,
-        unit="g",
-        confidence="high",
-        location="fridge",
-    )
-    db.add(inventory)
-    db.flush()
-
     first = process_daily_food_log(
         db,
         settings,
@@ -149,10 +133,8 @@ def test_food_log_replaces_actual_meals_and_inventory_atomically(
     )
 
     db.refresh(plan)
-    db.refresh(inventory)
     assert plan.original_plan_json == original_plan
     assert first.matched_recommendation_ids == [first_id]
-    assert inventory.quantity_estimate == 300
     entries = list(db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == TARGET)))
     planned_after = [entry for entry in entries if entry.planned_recommendation_id]
     actual = [entry for entry in entries if entry.food_log_id]
@@ -178,8 +160,6 @@ def test_food_log_replaces_actual_meals_and_inventory_atomically(
         {"quantity": corrected_quantity},
         TARGET,
     )
-    db.refresh(inventory)
-    assert inventory.quantity_estimate == 350
 
     second = process_daily_food_log(
         db,
@@ -189,9 +169,7 @@ def test_food_log_replaces_actual_meals_and_inventory_atomically(
         extractor=FakeExtractor(extraction(quantity=100)),
     )
 
-    db.refresh(inventory)
     assert second.matched_recommendation_ids == []
-    assert inventory.quantity_estimate == 400
     actual = list(
         db.scalars(
             select(NutritionEntry).where(
@@ -201,6 +179,11 @@ def test_food_log_replaces_actual_meals_and_inventory_atomically(
         )
     )
     assert len(actual) == 1
+    corrected = db.scalar(
+        select(NutritionEntry).where(NutritionEntry.source == "history_correction")
+    )
+    assert corrected is not None and corrected.food_log_id is None
+    assert corrected.quantity_json["components"][0]["quantity_value"] == 150
     assert actual[0].quantity_json["components"][0]["quantity_value"] == 100
     summary = calculate_nutrition_summary(db, TARGET)
     assert summary["ai_logged_meal_count"] == 1

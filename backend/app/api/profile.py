@@ -82,8 +82,6 @@ def get_runtime_settings(
         "email_provider": "resend",
         "resend_configured": settings.resend_configured,
         "strava_configured": settings.strava_configured,
-        "coop_online_minimum_chf": settings.coop_online_minimum_chf,
-        "migros_online_minimum_chf": settings.migros_online_minimum_chf,
     }
 
 

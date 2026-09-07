@@ -61,8 +61,10 @@ def ensure_workout_feedback(
         "skipped_count": sum("skipped" in entry.status for entry in entries),
         "pain_flag": any(entry.pain_flag for entry in entries),
     }
-    if existing and not force and all(
-        existing.context_snapshot_json.get(key) == value for key, value in facts.items()
+    if (
+        existing
+        and not force
+        and all(existing.context_snapshot_json.get(key) == value for key, value in facts.items())
     ):
         return existing
     style = coach_style_context(db, target_date)

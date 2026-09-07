@@ -47,3 +47,16 @@ def settings() -> Settings:
 @pytest.fixture
 def seeded(db: Session, settings: Settings):
     return seed_all(db, settings)
+
+
+@pytest.fixture(autouse=True)
+def prevent_live_meal_provider_calls(monkeypatch):
+    def offline_provider(**kwargs):
+        raise RuntimeError("Live AI calls are disabled in tests")
+
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.services.meal_planning.OpenAI",
+        lambda **kwargs: SimpleNamespace(responses=SimpleNamespace(parse=offline_provider)),
+    )

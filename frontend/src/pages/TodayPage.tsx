@@ -117,6 +117,7 @@ function NutritionSuggestionActions({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
       ]);
     },
@@ -143,8 +144,8 @@ function FoodLogCard({ today }: { today: Today }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory"] }),
       ]);
     },
   });
@@ -195,6 +196,7 @@ function MealRegenerationCard({ today }: { today: Today }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
       ]);
     },
   });
@@ -370,6 +372,7 @@ function WorkoutLogCard({ today }: { today: Today }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
@@ -470,6 +473,7 @@ function WorkoutRegenerationCard({ today }: { today: Today }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["strava"] }),
       ]);
@@ -565,6 +569,7 @@ function WorkoutCard({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
@@ -580,6 +585,7 @@ function WorkoutCard({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
@@ -595,6 +601,7 @@ function WorkoutCard({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
@@ -810,6 +817,7 @@ function StravaActivityDifficulty({ entry, date }: { entry: EntryStatus; date: s
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["meal-plan"] }),
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
@@ -914,13 +922,12 @@ function FolioRule({ label, number }: { label: string; number: string }) {
   return <div className="folio-rule" aria-hidden="true"><span>{label}</span><i /><b>{number}</b></div>;
 }
 
-function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook; section: "food" | "exercise" }) {
+function SevenDayOutlook({ outlook }: { outlook: RecedingHorizonOutlook }) {
   const queryClient = useQueryClient();
   const [preference, setPreference] = useState("");
   const [showPreference, setShowPreference] = useState(false);
-  const isFood = section === "food";
-  const strategy = isFood ? outlook.nutrition_strategy : outlook.training_strategy;
-  const preferenceId = `outlook-preference-${section}`;
+  const strategy = outlook.training_strategy;
+  const preferenceId = "outlook-preference-exercise";
   const regenerate = useMutation({
     mutationFn: () => api<RecedingHorizonOutlook>("/today/outlook/regenerate", {
       method: "POST",
@@ -940,15 +947,15 @@ function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook
     if (showPreference) setPreference("");
     setShowPreference(!showPreference);
   }
-  return <details className={`seven-day-outlook outlook-${section}`}>
+  return <details className="seven-day-outlook outlook-exercise">
     <summary>
-      <div><p className="eyebrow">Receding horizon / committed week</p><h2>{isFood ? "The next seven days of meals" : "The next seven days of exercise"}</h2></div>
+      <div><p className="eyebrow">Receding horizon / committed week</p><h2>The next seven days of exercise</h2></div>
       <span className="outlook-toggle"><b>View plan</b><i aria-hidden="true">+</i></span>
     </summary>
     <div className="outlook-introduction">
       <div className="outlook-copy"><p>{strategy}</p><small>{outlook.adjustment_summary}</small></div>
       <div className="outlook-regeneration">
-        <small>Refreshes meals, fueling, and exercise together. Today's daily plan stays unchanged.</small>
+        <small>Refreshes exercise guidance. Your weekly meal calendar stays fixed. Today's daily plan stays unchanged.</small>
         <div className="regeneration-actions">
           <button className="quiet small" type="button" disabled={regenerate.isPending} onClick={() => regenerate.mutate()}>{regenerate.isPending ? "Regenerating..." : "Regenerate weekly plan"}</button>
           <button className="text-button" type="button" aria-expanded={showPreference} aria-controls={preferenceId} disabled={regenerate.isPending} onClick={togglePreference}>{showPreference ? "Hide preference" : "Add preference"}</button>
@@ -956,24 +963,17 @@ function SevenDayOutlook({ outlook, section }: { outlook: RecedingHorizonOutlook
       </div>
     </div>
     {showPreference && <form className="outlook-preference-form" id={preferenceId} onSubmit={submit}>
-      <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder={isFood ? "For example: more batch-friendly meals and simple pre-run fuel." : "For example: favor cycling this week and keep Saturday's strength session."} /></label>
+      <label>Optional preference<textarea value={preference} maxLength={2000} onChange={(event) => setPreference(event.target.value)} placeholder="For example: favor cycling this week and keep Saturday's strength session." /></label>
       <button className="primary small" disabled={regenerate.isPending}>{regenerate.isPending ? "Regenerating..." : "Regenerate with preference"}</button>
     </form>}
     {regenerate.error && <p className="error outlook-regeneration-error" role="alert">{regenerate.error.message}</p>}
     <div className="outlook-days">
       {outlook.days.map((day, index) => {
         const formatted = new Date(`${day.plan_date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-        return <article className="outlook-day" key={`${section}-${day.plan_date}`}>
+        return <article className="outlook-day" key={day.plan_date}>
           <header><span>{String(index + 1).padStart(2, "0")}</span><div><time dateTime={day.plan_date}>{formatted}</time><small>{index === 0 ? "Adapts today" : index === 1 ? "Adaptation window" : "Committed"}</small></div></header>
-          {isFood ? <>
-            <h3>{day.nutrition.meal_template_names.join(" + ")}</h3>
-            <p>{day.nutrition.focus}</p>
-            {day.nutrition.fueling_recommendations.length > 0 && <ul>{day.nutrition.fueling_recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}
-            {day.nutrition.prep_note && <small className="outlook-prep">Prep: {day.nutrition.prep_note}</small>}
-          </> : <>
             <div className="outlook-session-heading"><h3>{day.workout.title}</h3><span>{day.workout.expected_duration_minutes} min · {day.workout.intensity.replaceAll("_", " ")}{day.workout.requires_gym ? " · gym" : ""}</span></div>
             <p>{day.workout.summary}</p>
-          </>}
           <p className="outlook-rationale">{day.rationale}</p>
         </article>;
       })}
@@ -1026,6 +1026,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
       </nav>
         <label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label>
       </div>
+      {isFood && !isHistorical && <section className="card"><p className="eyebrow">Plan ahead</p><h2>Plan your next two weeks</h2><p>Simple meals, Sunday cooking and a copyable shopping list for every week.</p><NavLink to="/meals">Open meal calendar & shopping lists →</NavLink></section>}
       {!isFood && <ExerciseLead today={data} />}
       <FolioRule label={isFood ? "Today's table" : "Session detail"} number="02" />
       <div className="today-grid">
@@ -1045,11 +1046,11 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
           </> : <>{!isHistorical && <WorkoutRegenerationCard today={data} />}<section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section></>}
           <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
-          {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>{data.shopping.summary}</p></section>}
+          {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>View the next two weeks of meals and copy a shopping list for each Monday-Sunday week.</p><NavLink to="/meals">Meal calendar & shopping lists →</NavLink></section>}
         </aside>
       </div>
       <ChatPanel key={`${data.date}-${alternativeQuestion}`} initialQuestion={alternativeQuestion} canAsk={!isHistorical} selectedDate={data.date} />
-      {!isHistorical && data.outlook && <SevenDayOutlook outlook={data.outlook} section={section} />}
+      {!isHistorical && !isFood && data.outlook && <SevenDayOutlook outlook={data.outlook} />}
       <RecordSheet today={data} kind={recordKind} onKindChange={(kind) => setRecordKind(kind)} onClose={() => setRecordKind(null)} />
     </div>
   );

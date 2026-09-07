@@ -36,7 +36,6 @@ SYNTHETIC_CONTEXT = {
     },
     "nutrition_summary_14d": {},
     "training_summary_28d": {},
-    "current_inventory": [],
     "active_meal_templates": [
         {
             "name": "Chicken power bowl",

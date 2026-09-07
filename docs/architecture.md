@@ -62,9 +62,11 @@ The deterministic fallback uses the same plan schema and validators.
 
 Planning uses a receding horizon.
 The AI considers fourteen consecutive days so that training load, recovery, meal variety, preparation, and fueling are not chosen in isolation.
-The first seven days contain strategic workout intent, exact meal-template selections, and fueling guidance and are the only horizon days exposed in the UI.
+The first seven days contain strategic workout intent and fueling guidance and are exposed in the exercise outlook.
+The Meals page exposes all saved calendar meal weeks, independently of this adaptive training horizon.
 The second week remains provisional strategic context.
-The daily planner, rather than the horizon planner, creates the final measurable workout prescription and complete recipes.
+The daily planner creates the final measurable workout prescription.
+The independent calendar meal planner supplies stable recipes and groceries for complete weeks.
 
 One or more immutable, numbered `two_week_plan` revisions can be stored for a Zurich-local anchor date.
 Automatic planning creates revision one, while explicit regeneration creates a new revision and retains the preceding version for audit.
@@ -79,9 +81,9 @@ The daily planner receives only the matching strategic day, the next three strat
 The daily plan treats the horizon and imported CSV as guidance, decides the final recommendation from all current evidence, and still passes the existing safety and catalog validators.
 
 Planner context is task-specific.
-Horizon planning receives compact catalog metadata and no recipes, inventory, shopping state, or prior full daily plan.
+Horizon planning receives compact catalog metadata and no recipes, shopping state, or prior full daily plan.
 Daily planning receives eligible current-day catalogs, a compact summary of yesterday, and only the nearby horizon.
-Workout regeneration excludes nutrition catalogs and inventory, while nutrition regeneration excludes workout history and the exercise catalog.
+Workout regeneration excludes nutrition catalogs, while nutrition regeneration excludes workout history and the exercise catalog.
 
 ## Coach messaging
 
@@ -116,32 +118,40 @@ An already-created canonical daily plan remains unchanged, while tomorrow onward
 
 ## Meal selection policy
 
-Daily meal selection uses the active curated template catalog, profile preferences and allergies, recent recommendation and consumption history, training demand, schedule, shopping state, and inventory.
-Inventory is a convenience and waste-reduction signal rather than an eligibility boundary.
-The planner assumes that missing ingredients can be purchased.
-
-When enough eligible alternatives exist, a main meal template recommended yesterday cannot be recommended again today.
-The planner also minimizes repetition across the previous 14 days.
-Easy, nutrient-dense meals remain the normal default, using preparation time, protein, fiber, and produce portions as quality signals.
-At least one template tagged `special` is required in each rolling seven-day period outside the fixed office-day exception, providing a more creative, higher-effort meal while keeping the other meal easy on two-meal days.
-The domain validator enforces consecutive-day variety, distinct meals within a day, allergy safety, catalog validity, and the weekly special-meal rule.
-The deterministic fallback applies the same policy when AI planning is unavailable.
+Calendar meal planning uses the curated template catalog, profile limits, preferences and allergies, recent recommendation history, training evidence, and the active training guide.
+It asks OpenAI for fourteen consecutive days beginning on a Monday using `OPENAI_PLANNER_MODEL`, Structured Outputs, and `store=false`.
+The planner may repair one invalid result before using a validated deterministic fallback, whose source is visible in the Meals page.
+Python checks date coverage, catalog membership, allergies, meal count, consecutive-day variety, and cooking effort before storing a week.
+Monday through Saturday meals must take at most 20 hands-on minutes, 30 total minutes, and an effort score of two.
+Sunday permits one special meal, with any second meal kept easy.
+All recipe quantities and preparation steps describe one serving, without implicit batch multiplication.
 
 Meal and exercise regeneration accept optional free-text preferences.
-For exercise regeneration, a supplied preference is the athlete's highest-priority workout instruction and takes precedence over the active target, imported guide, receding horizon, recovery optimization, progression heuristics, and ordinary variety. Only non-negotiable pain or medical safety rules, explicit schedule restrictions, unavailable equipment, and exercise-catalog validity can override it; the planner must retain every safe part and name the exact blocker.
-Meal preferences remain high priority after safety, allergy, catalog validity, and other hard constraints.
-Meal regeneration still uses only validated meal templates, and exercise regeneration still uses only available catalog exercises.
+For exercise regeneration, a supplied preference remains the athlete's highest-priority workout instruction after hard safety, schedule, equipment, and catalog constraints.
+Meal regeneration honors preferences within allergy safety, Sunday-only involved cooking, and catalog constraints.
+Approved changes to today's meals are audited in `plan_modification` and reflected in the calendar and shopping list without rewriting either original plan.
 
-## Inventory and shopping
+## Calendar meals and shopping
 
-The Inventory page combines editable fridge, freezer, pantry, and counter records with the existing weekly shopping recommendations.
-Catalog ingredients retain their food-catalog relationship, while standalone inventory records can represent arbitrary ingredients and prepared meals without polluting the nutrition catalog.
-Before a draft shopping plan is marked purchased, its quantities can be changed and unneeded items can be removed.
-Marking the plan purchased adds its final reviewed quantities to inventory in the same database transaction and is idempotent.
+`weekly_meal_plan` stores one stable Monday-Sunday recipe document per week, its provider source, validation results, and generation context.
+Missing weeks are generated in pairs of complete weeks.
+A unique Monday date and conflict-safe insertion prevent concurrent requests from replacing a saved week.
+The user-facing window includes the current week through the Sunday covering today plus thirteen days, so a midweek view includes three calendar weeks.
+Daily planning and the existing shopping job fill this window automatically.
+The authenticated, CSRF-protected `POST /api/v1/meals/plan` also fills missing weeks and returns the calendar with shopping lists.
 
-Free-text inventory additions use OpenAI Structured Outputs to distinguish ingredients from prepared meals, estimate missing quantities, identify storage locations, and match catalog foods only when appropriate.
-The provider call and validation finish before database mutation, and the validated additions are committed atomically.
-Provider-side response storage is disabled.
+Daily planning uses the saved nutrition document verbatim, including recipe quantities, fruit, and optional snacks, while training continues to adapt separately.
+Already-created daily plans remain canonical; calendar serialization overlays their current recommendations and flags differences from the saved week.
+The weekly shopping list is derived from exactly the meals and extras displayed in that calendar response.
+Identical ingredients and compatible units are summed using decimal arithmetic.
+Cooked grain and pulse weights remain explicitly cooked weights and the copyable list recommends ready-cooked or cooked/drained products rather than implying those are dry weights.
+Legacy recipe quantities that cannot be parsed remain visible as manual-check notes instead of disappearing from the list.
+There is no fixed basket, speculative pricing, retailer threshold padding, purchase status, or stock subtraction.
+Lists include delivery-by-Monday guidance and frozen options for ingredients needed later in the week.
+
+Inventory models, endpoints, ingestion, provider configuration, UI, and recording side effects have been removed.
+The migration renames old stock and purchase tables to `retired_inventory_item` and `retired_shopping_plan` for offline rollback only.
+These archives are excluded from future migration autogeneration and have no runtime application access.
 
 ## Canonical plan and history
 
@@ -175,15 +185,15 @@ Food diary text + today's nutrition suggestions + food catalog
                             |
                             +-- mark suggestions matched or discarded
                             +-- replace AI-derived actual meal entries
-                            +-- apply reversible inventory deltas
                             +-- recalculate nutrition history
 ```
 
 There is at most one `daily_food_log` row per date.
 It preserves the user's original text and the validated extraction for audit and re-analysis.
 AI-derived `nutrition_entry` rows store explicit meal components, estimated average quantities, approximate nutrients, assumptions, and an optional recommendation match.
-The external call completes before any mutation, so provider or validation failures leave recommendations and inventory untouched.
-A later submission locks the plan row, reverses only the inventory amounts actually deducted by the earlier extraction, deletes those derived entries, and applies the replacement atomically.
+The external call completes before any mutation, so provider or validation failures leave recommendations and actual records untouched.
+A later submission locks the plan row, deletes only entries still owned by the earlier extraction, and applies the replacement atomically.
+History corrections detach corrected actual entries from diary ownership so re-analysis preserves them.
 Food logging does not alter the canonical plan or workout entries.
 
 ## Workout ingestion

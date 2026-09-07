@@ -7,11 +7,8 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     DailyPlan,
     Exercise,
-    FoodItem,
-    InventoryItem,
     MealTemplate,
     ProfileSnapshot,
-    ShoppingPlan,
     TwoWeekPlan,
     UserProfile,
 )
@@ -314,42 +311,6 @@ def _exercise_catalog(
     return result
 
 
-def _inventory_context(db: Session) -> list[dict[str, Any]]:
-    rows = db.execute(
-        select(InventoryItem, FoodItem)
-        .outerjoin(FoodItem, FoodItem.id == InventoryItem.food_item_id)
-        .order_by(InventoryItem.created_at)
-    ).all()
-    return [
-        {
-            key: value
-            for key, value in {
-                "food": food.name if food else row.custom_name,
-                "item_type": row.item_type,
-                "quantity": row.quantity_estimate,
-                "quantity_label": row.quantity_label,
-                "unit": row.unit,
-                "confidence": row.confidence,
-                "expires_on": row.expires_on.isoformat() if row.expires_on else None,
-                "location": row.location,
-                "notes": row.notes,
-            }.items()
-            if value is not None
-        }
-        for row, food in rows
-    ]
-
-
-def _shopping_context(db: Session, plan_date: date) -> list[dict[str, Any]] | None:
-    week_start = plan_date - timedelta(days=plan_date.weekday())
-    shopping = db.scalar(
-        select(ShoppingPlan)
-        .where(ShoppingPlan.week_start == week_start)
-        .order_by(ShoppingPlan.created_at.desc())
-    )
-    return shopping.items_json if shopping else None
-
-
 def _horizon_context(db: Session, plan_date: date) -> dict[str, Any] | None:
     horizon = db.scalar(
         select(TwoWeekPlan)
@@ -406,14 +367,12 @@ def build_daily_planner_context(
                 db, plan_date - timedelta(days=1)
             ),
             "meal_selection_policy": build_meal_selection_policy(db, profile, plan_date),
-            "current_inventory": _inventory_context(db),
             "active_meal_templates": _meal_templates(
                 db, profile, plan_date, include_recipe_inputs=True
             ),
             "active_exercise_catalog": _exercise_catalog(
                 db, profile, plan_date, include_future_gym_options=False
             ),
-            "shopping_state": _shopping_context(db, plan_date),
             "active_training_plan_guide": daily_training_plan_guide_context(db, profile, plan_date),
             "receding_horizon": _horizon_context(db, plan_date),
         }
@@ -495,11 +454,9 @@ def build_nutrition_regeneration_context(
             "nutrition_summary_14d": nutrition_summary,
             "recent_nutrition_entries": recent_meals,
             "meal_selection_policy": build_meal_selection_policy(db, profile, plan_date),
-            "current_inventory": _inventory_context(db),
             "active_meal_templates": _meal_templates(
                 db, profile, plan_date, include_recipe_inputs=True
             ),
-            "shopping_state": _shopping_context(db, plan_date),
         }
     )
     return context

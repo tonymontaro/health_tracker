@@ -48,7 +48,6 @@
   .exercise-graphic { min-height: 390px; }
   .today-grid, .history-layout, .settings-grid, .account-security-card { grid-template-columns: 1fr; }
   .training-guide-days article { grid-template-columns: 1fr; gap: 0.45rem; }
-  .inventory-add-body { grid-template-columns: 1fr; gap: 1.5rem; }
   .account-security-card { gap: 2rem; }
   .side-column { gap: 0.4rem; }
   .chat-card { margin-right: -16px; margin-left: -16px; padding-right: 16px; padding-left: 16px; }
@@ -80,9 +79,9 @@
   .story-card > :not(.meal-figure, .detail-sheet) { grid-column: 1; }
   .meal-figure { grid-row: auto; min-height: 220px; margin-bottom: 1.2rem; }
   .food-log-card, .workout-log-card { padding: 1.2rem; }
-  .food-log-submit, .section-heading, .inventory-detail-heading, .shopping-editor-heading, .inventory-editor-actions, .purchase-actions, .history-entry { align-items: stretch; flex-direction: column; }
+  .food-log-submit, .section-heading, .shopping-editor-heading, .purchase-actions, .history-entry { align-items: stretch; flex-direction: column; }
   .food-log-submit small { max-width: none; }
-  .workout-editor-grid, .actual-grid, .form-grid, .inventory-fields, .quantity-editor, .recipe-columns { grid-template-columns: 1fr; }
+  .workout-editor-grid, .actual-grid, .form-grid, .quantity-editor, .recipe-columns { grid-template-columns: 1fr; }
   .exercise-checkin, .history-difficulty-editor { grid-template-columns: 1fr; gap: 0.8rem; }
   .exercise-action-buttons button { flex: 1; }
   .exercise-heading { align-items: flex-start; flex-direction: column; }
@@ -91,12 +90,6 @@
   .component-list li { grid-template-columns: 1fr auto; }
   .component-list li small { grid-column: 1 / -1; }
   .detail-sheet { width: 100%; padding: 1.5rem; }
-  .inventory-tabs { gap: 1.25rem; }
-  .inventory-tabs button { flex: 1; min-width: 0; }
-  .inventory-row > summary, .shopping-row > summary { grid-template-columns: minmax(0, 1fr) 30px; gap: 0.35rem 0.8rem; padding: 0.85rem 0.15rem; }
-  .inventory-row-facts, .shopping-row-facts { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; overflow: visible; white-space: normal; }
-  .inventory-row-toggle, .shopping-row-toggle { grid-row: 1; grid-column: 2; }
-  .inventory-row-details, .shopping-row-details { padding-right: 0.75rem; padding-left: 0.75rem; }
   .seven-day-outlook > summary { align-items: flex-start; min-height: 110px; }
   .outlook-toggle b { display: none; }
   .outlook-session-heading, .outlook-exercises li, .seven-day-outlook > footer { align-items: flex-start; flex-direction: column; }

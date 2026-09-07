@@ -24,8 +24,6 @@ def main() -> None:
             "today": "/api/v1/today",
             "details": "/api/v1/today/details",
             "history": "/api/v1/history",
-            "shopping": "/api/v1/shopping/current",
-            "shopping_migros": "/api/v1/shopping/current?retailer=Migros",
             "profile": "/api/v1/profile",
             "equipment": "/api/v1/equipment",
             "settings": "/api/v1/settings",
@@ -33,6 +31,10 @@ def main() -> None:
             response = client.get(path)
             response.raise_for_status()
             checks[name] = response.status_code
+
+        meal_plan = client.post("/api/v1/meals/plan", headers=headers, timeout=300)
+        meal_plan.raise_for_status()
+        checks["meal_plan"] = meal_plan.status_code
 
         history = client.get("/api/v1/history")
         if history.json():

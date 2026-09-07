@@ -125,6 +125,11 @@ When the owner-host tunnel is active:
 ## Data and domain invariants
 
 - There is one canonical plan per Zurich-local date.
+- Meals use stable Monday-Sunday `weekly_meal_plan` records with at least fourteen days visible, including a complete final week.
+- Shopping quantities come from the displayed single-serving recipes, fruit, and optional snacks.
+- Monday to Saturday meals require at most 20 hands-on minutes and 30 total minutes; involved cooking is Sunday-only.
+- Daily workout adaptation preserves the saved meals; approved daily meal changes must appear in both the calendar and its shopping list.
+- Inventory is removed from runtime behavior; `retired_*` tables are offline migration archives only.
 - `original_plan_json` is immutable; approved changes go into `current_plan_json` and audit records.
 - Recommendations and actual results are separate. Historical corrections must not rewrite the original recommendation.
 - Explicit food/workout records must not be overwritten by end-of-day reconciliation.

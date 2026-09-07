@@ -12,7 +12,6 @@ from app.jobs.tasks import finalize_day
 from app.schemas.api import HistoryWorkoutUpdate
 from app.services.history import correct_workout_entry, reconcile_day
 from app.services.planner.orchestrator import generate_daily_plan
-from app.services.shopping import STANDARD_ITEMS, generate_weekly_shopping_plan
 
 TARGET = date(2026, 8, 10)
 
@@ -149,15 +148,6 @@ def test_historical_completion_requires_actual_evidence(
     assert workout
     with pytest.raises(ValueError, match="actual performance evidence"):
         correct_workout_entry(db, workout, {"status": "completed"}, TARGET)
-
-
-def test_small_durable_basket_stays_in_store_without_threshold_padding(
-    db: Session, settings: Settings, seeded
-) -> None:
-    plan = generate_weekly_shopping_plan(db, settings, TARGET, "Migros")
-    assert plan.mode == "in_store"
-    assert all(item["purchase_mode"] == "in_store" for item in plan.items_json)
-    assert plan.estimated_total_chf == sum(item["estimated_chf"] for item in STANDARD_ITEMS)
 
 
 def test_production_rejects_default_secrets() -> None:

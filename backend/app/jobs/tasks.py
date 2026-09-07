@@ -8,8 +8,8 @@ from app.db.models import (
     DailyPlan,
     NotificationEvent,
     NutritionEntry,
-    ShoppingPlan,
     UserProfile,
+    WeeklyMealPlan,
     WorkoutEntry,
 )
 from app.services.coach import coach_response, coach_style_context
@@ -186,7 +186,7 @@ def finalize_day(db: Session, target_date: date) -> dict[str, int]:
 
 def generate_shopping(
     db: Session, settings: Settings, week_start: date, retailer: str = "Coop"
-) -> ShoppingPlan:
+) -> WeeklyMealPlan:
     return generate_weekly_shopping_plan(db, settings, week_start, retailer)
 
 

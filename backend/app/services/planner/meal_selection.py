@@ -31,6 +31,7 @@ def eligible_main_meal_templates(
             "flexible" not in {tag.casefold() for tag in template.tags}
             or plan_date.strftime("%A") in profile.office_days
         )
+        and (plan_date.weekday() == 6 or is_easy_meal(template))
         and not conflicts_with_allergies(template, profile.allergies)
     ]
 
@@ -65,18 +66,21 @@ def is_special_meal(template: MealTemplate) -> bool:
     return SPECIAL_MEAL_TAG in {tag.casefold() for tag in template.tags}
 
 
+def is_easy_meal(template: MealTemplate) -> bool:
+    return (
+        not is_special_meal(template)
+        and template.effort_score <= 2
+        and template.hands_on_minutes <= 20
+        and template.total_minutes <= 30
+    )
+
+
 def special_meal_required_today(db: Session, profile: UserProfile, plan_date: date) -> bool:
-    if plan_date.strftime("%A") in profile.office_days:
-        return False
-    special_names = {
-        template.name.casefold()
+    # Sunday is the only day available for adventurous cooking.
+    return plan_date.weekday() == 6 and any(
+        is_special_meal(template)
         for template in eligible_main_meal_templates(db, profile, plan_date)
-        if is_special_meal(template)
-    }
-    if not special_names:
-        return False
-    recent = recommended_main_meal_history(db, plan_date, days=6)
-    return not any(item["template_name"].casefold() in special_names for item in recent)
+    )
 
 
 def build_meal_selection_policy(
@@ -93,13 +97,8 @@ def build_meal_selection_policy(
             "avoid every main meal template recommended yesterday",
             "prefer easy, highly nutritious meals on ordinary days",
             "maximize variety across the recent fourteen-day recommendation history",
-            "include at least one special higher-effort meal in every rolling seven-day period",
-            "use inventory to reduce waste or effort only as a secondary tie-breaker",
+            "reserve adventurous meals for Sunday; keep Monday to Saturday simple and quick",
         ],
-        "inventory_policy": (
-            "Do not restrict recommendations to current inventory. Assume any missing ingredient can "
-            "be purchased. Inventory is only a convenience, expiry, and waste-reduction signal."
-        ),
         "yesterday_main_meal_templates": yesterday_names,
         "recent_recommended_main_meals_14d": history,
         "recent_template_frequency_14d": dict(sorted(counts.items())),

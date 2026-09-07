@@ -54,7 +54,8 @@ time.
 
 Choose one or two distinct main meal templates per day, respecting allergies and the meal limit.
 Favor variety, practical preparation, protein, fiber, produce, and the training demand across the
-full horizon. Include concrete fueling recommendations when training demand makes timing or extra
+full horizon. Reserve special or involved meals for Sunday only. Monday to Saturday require
+at most 20 hands-on minutes, 30 total minutes and effort score at most 2. Include concrete fueling recommendations when training demand makes timing or extra
 carbohydrate/protein useful. Do not assume missing ingredients cannot be purchased.
 
 Do not invent capacity, medical facts, recent results, or false precision. Do not provide diagnosis.

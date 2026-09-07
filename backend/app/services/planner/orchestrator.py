@@ -15,6 +15,7 @@ from app.db.models import (
 )
 from app.schemas.plan import DailyPlanDocument, canonicalize_proposal
 from app.schemas.two_week_plan import parse_two_week_plan_document
+from app.services.meal_planning import ensure_meal_weeks, scheduled_nutrition
 from app.services.planner.context import (
     build_daily_planner_context,
     build_profile_snapshot,
@@ -49,6 +50,8 @@ def generate_daily_plan(
     profile = db.scalar(select(UserProfile))
     if profile is None:
         raise RuntimeError("Profile has not been seeded")
+    ensure_meal_weeks(db, settings, plan_date, use_ai=use_ai)
+    nutrition = scheduled_nutrition(db, plan_date)
     if existing and horizon and horizon_uses_active_training_plan_guide(db, horizon, profile):
         return existing
 
@@ -64,6 +67,7 @@ def generate_daily_plan(
     if existing:
         return existing
     context = build_daily_planner_context(db, profile, snapshot, plan_date)
+    context["scheduled_nutrition"] = nutrition.model_dump(mode="json") if nutrition else None
     run = PlanningRun(
         plan_date=plan_date,
         model=settings.openai_planner_model if use_ai else "deterministic-fallback",
@@ -102,7 +106,12 @@ def generate_daily_plan(
                     "instruction": "Return a fresh response that satisfies every schema constraint.",
                 }
                 continue
-            errors = validate_plan(db, candidate, profile, plan_date)
+            if nutrition is not None:
+                candidate.nutrition = nutrition
+                candidate.prep_actions = []
+            errors = validate_plan(
+                db, candidate, profile, plan_date, enforce_meal_selection_policy=nutrition is None
+            )
             validation["attempts"].append({"attempt": attempt, "errors": errors, "stage": "domain"})
             if not errors:
                 proposal = candidate
@@ -127,11 +136,31 @@ def generate_daily_plan(
             None,
         )
         proposal = build_fallback_plan(db, plan_date, horizon_day=current_horizon_day)
-        fallback_errors = validate_plan(db, proposal, profile, plan_date)
+        if nutrition is not None:
+            proposal.nutrition = nutrition
+            proposal.prep_actions = []
+        fallback_errors = validate_plan(
+            db, proposal, profile, plan_date, enforce_meal_selection_policy=nutrition is None
+        )
         validation["fallback_errors"] = fallback_errors
         if fallback_errors:
             raise RuntimeError(f"Deterministic fallback is invalid: {fallback_errors}")
 
+    proposal.shopping.summary = (
+        "Copy each Monday-Sunday shopping list from the Meals page and arrange delivery by Monday."
+    )
+    proposal.shopping.retailer = "Either"
+    proposal.shopping.mode = "none"
+    proposal.shopping.estimated_total_chf = 0
+    proposal.shopping.items = []
+    proposal.shopping.action_needed = False
+    proposal.rationale.nutrition_factors = [
+        "Saved meal calendar: "
+        + ", ".join(
+            m.template_name for m in [proposal.nutrition.meal_1, proposal.nutrition.meal_2] if m
+        ),
+        "One-serving recipes and their weekly shopping quantities stay stable as training adapts.",
+    ]
     document = canonicalize_proposal(
         proposal,
         plan_date=plan_date,
