@@ -53,7 +53,7 @@ function shoppingResearchPrompt(period: MealPeriod): string {
     .map((item) => `${item.food_name}: ${item.quantity_label}`)
     .join("\n");
 
-  return `Please browse the web and turn this two-week shopping list into specific products I can buy in Zurich, Switzerland.
+  return `Please browse the web and turn this shopping list into specific products I can buy in Zurich, Switzerland.
 
 Find products at Swiss online grocery retailers such as Migros or Coop, preferably from one retailer for a single delivery.
 This order covers one main meal per day for one person, plus the listed snacks, fruit and nuts. Include all of those listed quantities. Optional meal ingredients are excluded; do not add them.
