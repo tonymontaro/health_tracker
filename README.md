@@ -39,13 +39,13 @@ React web app -----------+
 Chrome extension --------+---> FastAPI ---> PostgreSQL
 Scheduled job commands --+       |   |
                                  |   +---> Resend Email API
-                                 |   +---> OpenAI Responses API
+                                 |   +---> OpenAI or local Ollama
                                  +-------> Strava API
 ```
 
 PostgreSQL is the source of truth.
 Python calculates state and enforces all hard constraints.
-OpenAI chooses and explains high-quality options within those constraints.
+The selected AI provider chooses and explains high-quality options within those constraints.
 The web app, extension, and emails all render the same persisted canonical plan.
 
 See [docs/architecture.md](docs/architecture.md) for the detailed flow.
@@ -101,6 +101,8 @@ Important groups are:
 - PostgreSQL: `DATABASE_URL`
 - Public URLs: `APP_BASE_URL`, `API_BASE_URL`
 - Time: `APP_TIMEZONE`
+- AI provider: `AI_PROVIDER` (`openai` or `ollama`)
+- Local Ollama: `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_SECONDS`, `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_PLANNER_THINK`, `OLLAMA_THINK`
 - OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
 - Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID`, `STRAVA_INITIAL_SYNC_DAYS`, `STRAVA_SYNC_LOOKBACK_DAYS`, `STRAVA_SYNC_INTERVAL_MINUTES`
 - Email: `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`
@@ -330,13 +332,17 @@ The frontend can be hosted as static assets.
 The backend and scheduler can use the supplied backend image or an equivalent Python runtime.
 The database must not be exposed publicly.
 
-## OpenAI configuration
+## AI configuration
 
-Planning uses the Responses API with Pydantic Structured Outputs.
+Set `AI_PROVIDER=ollama` to use local Qwen3.8 for all AI workloads without an OpenAI key.
+See [Local AI with Ollama](docs/local-models.md) for model download, server startup, app configuration, and a synthetic connection check.
+Existing installations default to `AI_PROVIDER=openai` and retain their `OPENAI_*` settings.
+The shared provider boundary uses OpenAI Responses with Pydantic Structured Outputs or Ollama `/api/chat` with JSON Schema and Pydantic validation.
 The prompt is versioned, all structured output is validated, domain rules are validated again in Python, one repair attempt is allowed, and deterministic fallback is always available.
 Daily food text uses a separate configurable model and a strict meal, component, portion, nutrient, and recommendation-match schema.
 The default models are configurable and are never embedded throughout the codebase.
-Application history remains in PostgreSQL and API calls use `store=false`.
+Application history remains in PostgreSQL and OpenAI API calls use `store=false`.
+Ollama failures never trigger a hosted provider request.
 
 ## Daily food recording
 
@@ -344,7 +350,7 @@ The Today page accepts a short free-text description of the food and drinks cons
 After successful AI extraction, every nutrition recommendation for that date is marked as matched or discarded and separate actual meal entries are stored with estimated average portions.
 Submitting revised text replaces only the prior diary-owned entries for that day, preserving actuals corrected later in History.
 The original daily plan remains immutable.
-If OpenAI is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
+If the selected AI provider is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
 
 ## Strava activity import
 
@@ -393,12 +399,12 @@ Done records the recommendation unchanged with that exercise's selected difficul
 The Today page offers structured workout completion and an alternate free-text workout diary.
 The diary and selected-day Strava retrieval appear first in the Record drawer.
 Pain is described in the diary text and remains part of the validated extracted record.
-The free-text workflow first sends only the diary text and today's workout suggestions to OpenAI Structured Outputs without changing stored workout data.
+The free-text workflow first sends only the diary text and today's workout suggestions to the selected AI provider for structured extraction without changing stored workout data.
 The resulting draft can be corrected, deleted, or extended with manual exercises before a separately validated submission records it.
 Validated results contain typed activities, measurements, difficulty, pain, notes, assumptions, and optional recommendation matches.
 Matched recommendations become completed, unmatched recommendations become skipped by the diary, and unplanned exercise becomes a separate completed workout.
 Re-analysis atomically replaces only entries still controlled by that diary and preserves later Strava imports or History corrections.
-If OpenAI is unavailable or validation fails, no workout state changes.
+If the selected AI provider is unavailable or validation fails, no workout state changes.
 
 ## Key domain rules
 

@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -7,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import NotificationEvent, WorkoutCoachFeedback
-from app.services import coach as coach_service
 from app.services.chat import QA_SYSTEM_PROMPT
 from app.services.coach import (
     COACH_CHARACTER_PROMPT,
@@ -116,7 +116,9 @@ def test_ai_coach_receives_story_controls_and_returns_structured_metadata(
             captured["client"] = kwargs
             self.responses = FakeResponses()
 
-    monkeypatch.setattr(coach_service, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(
+        "app.services.ai.OpenAI", lambda **kwargs: nullcontext(FakeOpenAI(**kwargs))
+    )
     settings = Settings(
         APP_ENV="test",
         OPENAI_API_KEY="test-key",
@@ -177,7 +179,9 @@ def test_ai_story_during_cooldown_is_rejected(monkeypatch) -> None:
         def __init__(self, **kwargs):
             self.responses = FakeResponses()
 
-    monkeypatch.setattr(coach_service, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(
+        "app.services.ai.OpenAI", lambda **kwargs: nullcontext(FakeOpenAI(**kwargs))
+    )
     settings = Settings(
         APP_ENV="test",
         OPENAI_API_KEY="test-key",

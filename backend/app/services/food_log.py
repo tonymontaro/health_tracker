@@ -2,7 +2,6 @@ import json
 from datetime import date
 from typing import Any, Protocol
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,12 @@ from app.db.models import (
     UserProfile,
 )
 from app.schemas.food_log import FoodLogExtraction, FoodLogResponse
+from app.services.ai import (
+    AIConfigurationError,
+    AIProviderError,
+    AISchemaError,
+    generate_structured,
+)
 from app.services.metrics import recalculate_derived_summary
 
 FOOD_LOG_SYSTEM_PROMPT = """Interpret one free-text food diary for a single calendar day.
@@ -50,14 +55,10 @@ class FoodLogExtractionProvider(Protocol):
 
 class FoodLogExtractor:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        self.model = settings.openai_food_log_model
-        self.client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-            max_retries=0,
-        )
+        if not settings.ai_enabled:
+            raise AIConfigurationError("The selected AI provider is not configured")
+        self.settings = settings
+        self.model = settings.ai_model("food_log")
 
     def extract(
         self,
@@ -73,7 +74,9 @@ class FoodLogExtractor:
         canonical_foods = {food["name"].casefold(): food["name"] for food in catalog_foods}
         correction: dict[str, Any] | None = None
         last_errors: list[str] = []
+        schema_error: str | None = None
         for _ in range(2):
+            schema_error = None
             payload: dict[str, Any] = {
                 "food_log_text": raw_text,
                 "today_recommendations": recommendations,
@@ -82,37 +85,34 @@ class FoodLogExtractor:
             if correction:
                 payload["correction"] = correction
             try:
-                response = self.client.responses.parse(
-                    model=self.model,
-                    reasoning={"effort": "low"},
-                    input=[
-                        {"role": "system", "content": FOOD_LOG_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": json.dumps(payload, separators=(",", ":")),
-                        },
-                    ],
-                    text_format=FoodLogExtraction,
-                    store=False,
+                extraction = generate_structured(
+                    self.settings,
+                    task="food_log",
+                    system_prompt=FOOD_LOG_SYSTEM_PROMPT,
+                    user_prompt=json.dumps(payload, separators=(",", ":")),
+                    response_model=FoodLogExtraction,
+                    max_retries=0,
                 )
-                extraction = response.output_parsed
-                if extraction is None:
-                    last_errors = ["The model returned no parsed result."]
-                else:
-                    extraction = _canonicalize_catalog_names(extraction, canonical_foods)
-                    last_errors = validate_extraction(
-                        extraction, known_ids, set(canonical_foods.values())
-                    )
-                    if not last_errors:
-                        return extraction
+                extraction = _canonicalize_catalog_names(extraction, canonical_foods)
+                last_errors = validate_extraction(
+                    extraction, known_ids, set(canonical_foods.values())
+                )
+                if not last_errors:
+                    return extraction
+            except AIProviderError as exc:
+                # Changing the model's instructions cannot repair a transport failure.
+                raise FoodLogExtractionError(f"{exc} Nothing was changed.") from None
             except Exception as exc:  # noqa: BLE001 - provider errors use one bounded repair attempt.
                 last_errors = [f"{type(exc).__name__}: {str(exc)[:1000]}"]
+                if isinstance(exc, AISchemaError):
+                    schema_error = str(exc)
             correction = {
                 "errors": last_errors,
                 "instruction": "Return a fresh result that fixes every error without adding unmentioned food.",
             }
         raise FoodLogExtractionError(
             "AI could not reliably interpret the food log. Nothing was changed."
+            + (f" {schema_error}" if schema_error else "")
         )
 
 

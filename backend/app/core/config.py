@@ -1,11 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+AITask = Literal["planner", "qa", "food_log", "workout_log"]
 
 
 class Settings(BaseSettings):
@@ -34,6 +36,15 @@ class Settings(BaseSettings):
     openai_workout_log_model: str = "gpt-5.6-luna"
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "medium"
 
+    ai_provider: Literal["openai", "ollama"] = "openai"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = Field(default="qwen3.8:27b-q4_K_M", min_length=1)
+    ollama_timeout_seconds: float = Field(default=600, gt=0, le=3600)
+    ollama_num_ctx: int = Field(default=16384, ge=2048, le=262144)
+    ollama_num_predict: int = Field(default=8192, ge=256, le=65536)
+    ollama_planner_think: bool = True
+    ollama_think: bool = False
+
     strava_client_id: int | None = None
     strava_client_secret: SecretStr | None = None
     strava_webhook_verify_token: SecretStr | None = None
@@ -53,6 +64,36 @@ class Settings(BaseSettings):
     bootstrap_email: str = "owner@localhost"
     bootstrap_password: SecretStr = SecretStr("change-me-now")
     extension_api_token: SecretStr | None = None
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def validate_ollama_base_url(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.query
+            or url.fragment
+            or url.path not in {"", "/"}
+        ):
+            raise ValueError("OLLAMA_BASE_URL must be an HTTP origin without credentials or a path")
+        return value.rstrip("/")
+
+    @property
+    def ai_enabled(self) -> bool:
+        return self.ai_provider == "ollama" or bool(self.openai_key_value)
+
+    def ai_model(self, task: AITask) -> str:
+        if self.ai_provider == "ollama":
+            return self.ollama_model
+        return {
+            "planner": self.openai_planner_model,
+            "qa": self.openai_qa_model,
+            "food_log": self.openai_food_log_model,
+            "workout_log": self.openai_workout_log_model,
+        }[task]
 
     @field_validator("database_url")
     @classmethod

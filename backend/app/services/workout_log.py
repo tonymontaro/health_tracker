@@ -3,7 +3,6 @@ from datetime import date
 from typing import Any, Protocol
 from uuid import UUID
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +13,12 @@ from app.schemas.workout_log import (
     WorkoutLogAnalysisResponse,
     WorkoutLogExtraction,
     WorkoutLogResponse,
+)
+from app.services.ai import (
+    AIConfigurationError,
+    AIProviderError,
+    AISchemaError,
+    generate_structured,
 )
 from app.services.metrics import recalculate_derived_summary
 from app.services.workout_feedback import ensure_workout_feedback
@@ -50,14 +55,10 @@ class WorkoutLogExtractionProvider(Protocol):
 
 class WorkoutLogExtractor:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        self.model = settings.openai_workout_log_model
-        self.client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-            max_retries=0,
-        )
+        if not settings.ai_enabled:
+            raise AIConfigurationError("The selected AI provider is not configured")
+        self.settings = settings
+        self.model = settings.ai_model("workout_log")
 
     def extract(
         self,
@@ -71,7 +72,9 @@ class WorkoutLogExtractor:
         }
         correction: dict[str, Any] | None = None
         last_errors: list[str] = []
+        schema_error: str | None = None
         for _ in range(2):
+            schema_error = None
             payload: dict[str, Any] = {
                 "workout_log_text": raw_text,
                 "today_recommendations": recommendations,
@@ -79,28 +82,24 @@ class WorkoutLogExtractor:
             if correction:
                 payload["correction"] = correction
             try:
-                response = self.client.responses.parse(
-                    model=self.model,
-                    reasoning={"effort": "low"},
-                    input=[
-                        {"role": "system", "content": WORKOUT_LOG_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": json.dumps(payload, separators=(",", ":")),
-                        },
-                    ],
-                    text_format=WorkoutLogExtraction,
-                    store=False,
+                extraction = generate_structured(
+                    self.settings,
+                    task="workout_log",
+                    system_prompt=WORKOUT_LOG_SYSTEM_PROMPT,
+                    user_prompt=json.dumps(payload, separators=(",", ":")),
+                    response_model=WorkoutLogExtraction,
+                    max_retries=0,
                 )
-                extraction = response.output_parsed
-                if extraction is None:
-                    last_errors = ["The model returned no parsed result."]
-                else:
-                    last_errors = validate_extraction(extraction, known_ids)
-                    if not last_errors:
-                        return extraction
+                last_errors = validate_extraction(extraction, known_ids)
+                if not last_errors:
+                    return extraction
+            except AIProviderError as exc:
+                # Changing the model's instructions cannot repair a transport failure.
+                raise WorkoutLogExtractionError(f"{exc} Nothing was changed.") from None
             except Exception as exc:  # noqa: BLE001 - one bounded provider repair is intentional.
                 last_errors = [f"{type(exc).__name__}: {str(exc)[:1000]}"]
+                if isinstance(exc, AISchemaError):
+                    schema_error = str(exc)
             correction = {
                 "errors": last_errors,
                 "instruction": (
@@ -110,6 +109,7 @@ class WorkoutLogExtractor:
             }
         raise WorkoutLogExtractionError(
             "AI could not reliably interpret the workout log. Nothing was changed."
+            + (f" {schema_error}" if schema_error else "")
         )
 
 
@@ -167,7 +167,7 @@ def process_daily_workout_log(
     model = (
         active_extractor.model
         if active_extractor
-        else f"{settings.openai_workout_log_model}:reviewed"
+        else f"{settings.ai_model('workout_log')}:reviewed"
     )
     try:
         db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date).with_for_update())

@@ -76,9 +76,7 @@ def ensure_workout_feedback(
     )
     feedback = existing or WorkoutCoachFeedback(feedback_date=target_date)
     feedback.message = response.message
-    feedback.model = (
-        settings.openai_qa_model if settings.openai_key_value else "deterministic-fallback"
-    )
+    feedback.model = response._model
     feedback.context_snapshot_json = {
         **facts,
         "coach_style": {

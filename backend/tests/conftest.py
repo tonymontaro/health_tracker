@@ -51,12 +51,15 @@ def seeded(db: Session, settings: Settings):
 
 @pytest.fixture(autouse=True)
 def prevent_live_meal_provider_calls(monkeypatch):
-    def offline_provider(**kwargs):
+    def offline_provider(*args, **kwargs):
         raise RuntimeError("Live AI calls are disabled in tests")
 
-    from types import SimpleNamespace
+    monkeypatch.setattr("app.services.meal_planning.generate_structured", offline_provider)
 
-    monkeypatch.setattr(
-        "app.services.meal_planning.OpenAI",
-        lambda **kwargs: SimpleNamespace(responses=SimpleNamespace(parse=offline_provider)),
-    )
+
+@pytest.fixture(autouse=True)
+def prevent_live_http_requests(monkeypatch):
+    def offline_request(*args, **kwargs):
+        raise AssertionError("Live HTTP requests are disabled in tests; use MockTransport")
+
+    monkeypatch.setattr("httpx.HTTPTransport.handle_request", offline_request)

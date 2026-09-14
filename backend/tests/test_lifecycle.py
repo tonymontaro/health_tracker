@@ -105,9 +105,9 @@ def test_failed_ai_planning_reaches_fallback(db: Session, monkeypatch, seeded) -
         calls += 1
         raise RuntimeError("provider unavailable")
 
-    monkeypatch.setattr("app.services.planner.openai_planner.OpenAIPlanner.generate", fail)
+    monkeypatch.setattr("app.services.planner.ai_planner.AIPlanner.generate", fail)
     monkeypatch.setattr(
-        "app.services.planner.openai_two_week_planner.OpenAITwoWeekPlanner.generate",
+        "app.services.planner.ai_two_week_planner.AITwoWeekPlanner.generate",
         fail,
     )
     plan = generate_daily_plan(db, settings, TARGET, use_ai=True)

@@ -1,13 +1,12 @@
-"""Run a privacy-safe OpenAI Structured Outputs smoke test with fictitious data."""
+"""Run a privacy-safe AI Structured Outputs smoke test with fictitious data."""
 
 import json
 
-from openai import OpenAI
-
 from app.core.config import get_settings
 from app.schemas.api import QAResponse
+from app.services.ai import generate_structured
 from app.services.chat import QA_SYSTEM_PROMPT
-from app.services.planner.openai_planner import OpenAIPlanner
+from app.services.planner.ai_planner import AIPlanner
 
 SYNTHETIC_CONTEXT = {
     "synthetic_test_data": True,
@@ -77,7 +76,7 @@ SYNTHETIC_CONTEXT = {
 
 def main() -> None:
     settings = get_settings()
-    planner = OpenAIPlanner(settings)
+    planner = AIPlanner(settings)
     proposal = None
     planner_rejections: list[str] = []
     correction = None
@@ -100,39 +99,30 @@ def main() -> None:
             "workout": {"kind": "recovery", "duration_minutes": 20},
         }
     )
-    client = OpenAI(
-        api_key=settings.openai_key_value,
-        timeout=120,
-        max_retries=1,
-    )
-    qa_result = client.responses.parse(
-        model=settings.openai_qa_model,
-        reasoning={"effort": "low"},
-        input=[
-            {"role": "system", "content": QA_SYSTEM_PROMPT},
+    qa_result = generate_structured(
+        settings,
+        task="qa",
+        system_prompt=QA_SYSTEM_PROMPT,
+        user_prompt=json.dumps(
             {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "synthetic_test_data": True,
-                        "question": "Why is this a conservative starting plan?",
-                        "today_plan": plan_for_qa,
-                        "context": SYNTHETIC_CONTEXT,
-                    },
-                    separators=(",", ":"),
-                ),
+                "synthetic_test_data": True,
+                "question": "Why is this a conservative starting plan?",
+                "today_plan": plan_for_qa,
+                "context": SYNTHETIC_CONTEXT,
             },
-        ],
-        text_format=QAResponse,
-        store=False,
+            separators=(",", ":"),
+        ),
+        response_model=QAResponse,
+        max_retries=1,
     )
     print(
         {
-            "planner_model": settings.openai_planner_model,
+            "provider": settings.ai_provider,
+            "planner_model": settings.ai_model("planner"),
             "planner_parsed": proposal is not None,
             "planner_schema_rejections": planner_rejections,
-            "qa_model": settings.openai_qa_model,
-            "qa_parsed": qa_result.output_parsed is not None,
+            "qa_model": settings.ai_model("qa"),
+            "qa_parsed": bool(qa_result.answer),
             "main_meals": proposal.nutrition.expected_main_meals if proposal else None,
             "exercises": len(proposal.workout.exercises) if proposal else None,
         }

@@ -1,7 +1,6 @@
 import asyncio
 from copy import deepcopy
 from datetime import date, timedelta
-from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -146,8 +145,9 @@ def test_daily_regeneration_updates_calendar_and_list_preserving_originals(db, s
     assert week.plan_json == original_week
 
 
-def test_meal_provider_validation_repairs_before_persisting_and_disables_storage(
-    db, settings, seeded, monkeypatch
+@pytest.mark.parametrize("provider", ["openai", "ollama"])
+def test_meal_provider_validation_repairs_before_persisting(
+    db, settings, seeded, monkeypatch, provider
 ):
     # Use a valid fallback only to construct the provider fixture, then remove its rows.
     weeks = ensure_meal_weeks(db, settings, MONDAY, use_ai=False)
@@ -175,20 +175,18 @@ def test_meal_provider_validation_repairs_before_persisting_and_disables_storage
     assert _selection_errors(db, seeded, bad, MONDAY, set())
     calls = []
 
-    def parse(**kwargs):
+    def generate(*args, **kwargs):
         assert db.scalar(select(WeeklyMealPlan.id)) is None
-        assert kwargs["store"] is False
+        assert kwargs["task"] == "planner"
         calls.append(kwargs)
-        return SimpleNamespace(output_parsed=bad if len(calls) == 1 else proposal)
+        return bad if len(calls) == 1 else proposal
 
-    monkeypatch.setattr(
-        "app.services.meal_planning.OpenAI",
-        lambda **kwargs: SimpleNamespace(responses=SimpleNamespace(parse=parse)),
-    )
-    settings.openai_api_key = SecretStr("test-key")
+    monkeypatch.setattr("app.services.meal_planning.generate_structured", generate)
+    settings.ai_provider = provider
+    settings.openai_api_key = SecretStr("test-key") if provider == "openai" else None
     weeks = ensure_meal_weeks(db, settings, MONDAY)
     assert len(calls) == 2
-    assert all(week.source == "openai" for week in weeks)
+    assert all(week.source == provider for week in weeks)
     assert weeks[0].validation_result_json["attempts"][0]["errors"]
 
 

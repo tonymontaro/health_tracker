@@ -1,14 +1,14 @@
 # Architecture
 
 Health Autopilot is a single-user modular monolith.
-PostgreSQL is the source of truth, FastAPI owns business behavior, and OpenAI operates only inside validated planning and Q&A boundaries.
+PostgreSQL is the source of truth, FastAPI owns business behavior, and AI providers operate only inside validated planning, extraction, and Q&A boundaries.
 
 ```text
 React web app -----------+
 Chrome extension --------+---> FastAPI ---> PostgreSQL
 Scheduled job commands --+       |   |
                                  |   +---> Resend Email API
-                                 |   +---> OpenAI Responses API
+                                 |   +---> OpenAI or local Ollama
                                  +-------> Strava API
 ```
 
@@ -26,7 +26,7 @@ Derived metrics and ProfileSnapshot
 RecedingHorizonContext + previous horizon revision
        |
        v
-OpenAI 14-day structured proposal
+AI 14-day structured proposal
        |
        v
 Pydantic and domain validation
@@ -45,7 +45,7 @@ Immutable TwoWeekPlan revision for this anchor date
 Task-specific Daily PlannerContext with today's strategy and three-day lookahead
        |
        v
-OpenAI structured daily proposal
+AI structured daily proposal
        |
        v
 Pydantic and domain validation
@@ -59,6 +59,15 @@ The model never reads the database directly.
 The context builder selects recent, decision-relevant history.
 Pydantic validates shape and Python validates domain rules.
 The deterministic fallback uses the same plan schema and validators.
+
+`app/services/ai.py` owns provider selection, structured generation, validation, and sanitized transport errors.
+`AI_PROVIDER=openai` retains the existing task-specific models and Responses API with `store=false`.
+`AI_PROVIDER=ollama` sends every task directly to the configured Ollama origin using `/api/chat`, JSON Schema, and the configured local model, initially Qwen3.8-27B at 4-bit precision.
+Local requests use configurable context, output, thinking, and timeout limits, disable input truncation and context shifting, and never fall through to OpenAI.
+Only completed, schema-valid content reaches domain validation; thinking and raw error bodies are excluded.
+The Ollama decoding schema omits string maximum lengths of 2000 or more to avoid grammar compilation failures; the complete schema remains in the prompt and Pydantic still enforces every constraint.
+Persisted plan sources distinguish `openai`, `ollama`, and `fallback`, while existing historical records retain their original source.
+See [local model setup](local-models.md) for startup and connection verification.
 
 Planning uses a receding horizon.
 The AI considers fourteen consecutive days so that training load, recovery, meal variety, preparation, and fueling are not chosen in isolation.
@@ -119,7 +128,7 @@ An already-created canonical daily plan remains unchanged, while tomorrow onward
 ## Meal selection policy
 
 Calendar meal planning uses the curated template catalog, profile limits, preferences and allergies, recent recommendation history, training evidence, and the active training guide.
-It asks OpenAI for fourteen consecutive days beginning on a Monday using `OPENAI_PLANNER_MODEL`, Structured Outputs, and `store=false`.
+It asks the selected provider for fourteen consecutive days beginning on a Monday using the shared structured-generation boundary and planner model configuration.
 The planner may repair one invalid result before using a validated deterministic fallback, whose source is visible in the Meals page.
 Python checks date coverage, catalog membership, allergies, meal count, consecutive-day variety, and cooking effort before storing a week.
 Monday through Saturday meals must take at most 20 hands-on minutes, 30 total minutes, and an effort score of two.
@@ -188,7 +197,7 @@ History corrections update the actual entries and recalculate derived summaries 
 Food diary text + today's nutrition suggestions + food catalog
                             |
                             v
-                  OpenAI Structured Output
+                    AI Structured Output
                             |
                             v
               Pydantic and domain validation
@@ -217,7 +226,7 @@ Food logging does not alter the canonical plan or workout entries.
 Strava OAuth and scheduled sync          Free-text workout diary
                  |                                  |
                  v                                  v
- normalized Strava / Garmin activity      OpenAI Structured Output
+ normalized Strava / Garmin activity        AI Structured Output
                  |                                  |
                  +---------------+------------------+
                                  |
@@ -266,8 +275,8 @@ The extension uses revocable random bearer tokens whose hashes are stored in Pos
 The OpenAI key exists only in backend configuration.
 Strava client credentials exist only in backend configuration.
 Strava access and refresh tokens are encrypted before persistence with a key derived from the session secret.
-Provider-side response storage is disabled for planning, food extraction, and Q&A calls.
-Provider-side response storage is also disabled for workout extraction.
+OpenAI response storage is disabled for all workloads.
+Ollama requests carry no OpenAI credentials and ignore HTTP proxy environment variables.
 Food extraction sends only the diary text, today's nutrition suggestions, and the food catalog rather than the full health profile.
 
 ## Jobs

@@ -74,10 +74,17 @@ def get_runtime_settings(
 ) -> dict[str, object]:
     return {
         "app_timezone": settings.app_timezone,
-        "planner_model": settings.openai_planner_model,
-        "qa_model": settings.openai_qa_model,
-        "workout_log_model": settings.openai_workout_log_model,
-        "reasoning_effort": settings.openai_reasoning_effort,
+        "ai_provider": settings.ai_provider,
+        "ai_configured": settings.ai_enabled,
+        "planner_model": settings.ai_model("planner"),
+        "qa_model": settings.ai_model("qa"),
+        "food_log_model": settings.ai_model("food_log"),
+        "workout_log_model": settings.ai_model("workout_log"),
+        "reasoning_effort": (
+            settings.openai_reasoning_effort if settings.ai_provider == "openai" else None
+        ),
+        "ollama_planner_think": settings.ollama_planner_think,
+        "ollama_think": settings.ollama_think,
         "openai_configured": bool(settings.openai_key_value),
         "email_provider": "resend",
         "resend_configured": settings.resend_configured,

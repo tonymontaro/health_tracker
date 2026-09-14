@@ -2,11 +2,9 @@ import json
 import logging
 from typing import Any
 
-from openai import OpenAI, OpenAIError
-
 from app.core.config import Settings
 from app.schemas.two_week_plan import TwoWeekPlanProposal
-from app.services.planner.openai_planner import PlannerProviderError, _provider_error_summary
+from app.services.ai import generate_structured
 
 TWO_WEEK_PLANNER_VERSION = "two-week-planner-v2"
 logger = logging.getLogger(__name__)
@@ -63,12 +61,9 @@ Do not output hidden chain-of-thought. Keep summaries and rationales concise and
 """
 
 
-class OpenAITwoWeekPlanner:
+class AITwoWeekPlanner:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
         self.settings = settings
-        self.client = OpenAI(api_key=settings.openai_key_value, timeout=120)
 
     def generate(
         self,
@@ -82,26 +77,16 @@ class OpenAITwoWeekPlanner:
             prompt += "\nThe prior candidate failed validation. Correct these issues:\n"
             prompt += json.dumps(correction, default=str, separators=(",", ":"))
         logger.info(
-            "OpenAI receding-horizon request · model=%s · reasoning=%s · correction=%s",
-            self.settings.openai_planner_model,
-            self.settings.openai_reasoning_effort,
+            "AI receding-horizon request · provider=%s · model=%s · correction=%s",
+            self.settings.ai_provider,
+            self.settings.ai_model("planner"),
             correction is not None,
         )
-        try:
-            response = self.client.responses.parse(
-                model=self.settings.openai_planner_model,
-                reasoning={"effort": self.settings.openai_reasoning_effort},
-                input=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                text_format=TwoWeekPlanProposal,
-                store=False,
-            )
-        except OpenAIError as exc:
-            message = _provider_error_summary(exc)
-            logger.warning(message)
-            raise PlannerProviderError(message) from exc
-        if response.output_parsed is None:
-            raise ValueError("OpenAI returned no parsed receding-horizon plan")
-        return response.output_parsed
+        return generate_structured(
+            self.settings,
+            task="planner",
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=prompt,
+            response_model=TwoWeekPlanProposal,
+            reasoning_effort=self.settings.openai_reasoning_effort,
+        )

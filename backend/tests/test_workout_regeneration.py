@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import PlanModification, PlanningRun, WorkoutEntry
-from app.services.planner.openai_planner import OpenAIPlanner, PlannerProviderError
+from app.services.ai import AIProviderError
+from app.services.planner.ai_planner import AIPlanner
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.workout_regeneration import (
     REGENERATION_VERSION,
@@ -128,11 +129,11 @@ def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
 
     def fail(self, context, correction=None, *, prompt_label=None):
         calls.append(correction)
-        raise PlannerProviderError(
+        raise AIProviderError(
             "OpenAI request failed after automatic retries · HTTP 520 · transient provider error"
         )
 
-    monkeypatch.setattr(OpenAIPlanner, "generate", fail)
+    monkeypatch.setattr(AIPlanner, "generate", fail)
 
     regenerate_workout(db, ai_settings, plan)
 

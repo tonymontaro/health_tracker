@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+PlanSource = Literal["openai", "ollama", "fallback"]
+
 
 class Confidence(StrEnum):
     RECORDED = "recorded"
@@ -216,7 +218,7 @@ class ProfileSnapshotSummary(BaseModel):
 
 class DailyPlanDocument(BaseModel):
     plan_date: date
-    source: Literal["openai", "fallback"]
+    source: PlanSource
     profile_snapshot: ProfileSnapshotSummary
     nutrition: NutritionPlan
     workout: WorkoutPlan
@@ -236,7 +238,7 @@ def canonicalize_proposal(
     *,
     plan_date: date,
     snapshot: ProfileSnapshotSummary,
-    source: Literal["openai", "fallback"],
+    source: PlanSource,
 ) -> DailyPlanDocument:
     nutrition = NutritionPlan(
         meal_1=MealRecommendation(

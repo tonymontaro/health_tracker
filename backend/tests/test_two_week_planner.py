@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, timedelta
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -261,10 +262,14 @@ def test_pain_changes_next_day_to_recovery(db: Session, settings: Settings, seed
     assert "pain" in revised_document.adjustment_summary.lower()
 
 
-def test_ai_candidate_is_validated_and_persisted(db: Session, monkeypatch, seeded) -> None:
+@pytest.mark.parametrize("provider", ["openai", "ollama"])
+def test_ai_candidate_is_validated_and_persisted(
+    db: Session, monkeypatch, seeded, provider
+) -> None:
     ai_settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
-        OPENAI_API_KEY="fake-key",
+        AI_PROVIDER=provider,
+        OPENAI_API_KEY="fake-key" if provider == "openai" else None,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -278,14 +283,14 @@ def test_ai_candidate_is_validated_and_persisted(db: Session, monkeypatch, seede
         return candidate
 
     monkeypatch.setattr(
-        "app.services.planner.openai_two_week_planner.OpenAITwoWeekPlanner.generate",
+        "app.services.planner.ai_two_week_planner.AITwoWeekPlanner.generate",
         generate,
     )
     row = ensure_two_week_plan(db, ai_settings, TARGET, use_ai=True)
 
     assert calls == 1
-    assert row.source == "openai"
-    assert row.model == ai_settings.openai_planner_model
+    assert row.source == provider
+    assert row.model == ai_settings.ai_model("planner")
 
 
 def test_legacy_detailed_horizon_is_read_as_strategic_context(

@@ -171,7 +171,7 @@ export type OutlookDay = {
 export type RecedingHorizonOutlook = {
   anchor_date: string;
   revision: number;
-  source: "openai" | "fallback";
+  source: "openai" | "ollama" | "fallback";
   summary: string;
   training_strategy: string;
   nutrition_strategy: string;
@@ -183,7 +183,7 @@ export type RecedingHorizonOutlook = {
 export type Today = {
   date: string;
   recording_dates: string[];
-  source: "openai" | "fallback";
+  source: "openai" | "ollama" | "fallback";
   current_status: string;
   recovery_status: string;
   current_target_goal: string | null;

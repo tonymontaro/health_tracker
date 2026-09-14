@@ -12,7 +12,10 @@ Health Autopilot is a single-user personal health, meal, and hybrid-training pla
 - `docs/`: architecture and behavior documentation.
 - `scripts/`: local setup helpers.
 
-PostgreSQL is the source of truth. FastAPI owns state changes and hard constraints. OpenAI returns structured proposals/extractions which must pass Pydantic and domain validation before persistence. The frontend, extension, email jobs, and scheduler consume the same canonical data.
+PostgreSQL is the source of truth.
+FastAPI owns state changes and hard constraints.
+The selected AI provider returns structured proposals/extractions which must pass Pydantic and domain validation before persistence.
+The frontend, extension, email jobs, and scheduler consume the same canonical data.
 
 ## Important runtime facts
 
@@ -21,6 +24,9 @@ PostgreSQL is the source of truth. FastAPI owns state changes and hard constrain
 - PostgreSQL normally listens on local port `55432` as the Homebrew `postgresql@17` service.
 - The backend listens on `http://localhost:8001`; port 8000 belongs to another application on the owner's host.
 - The Vite frontend listens on `http://localhost:5173` and proxies `/api` and `/health` to port 8001.
+- `AI_PROVIDER` selects `openai` (existing default) or `ollama` for every AI workload through `backend/app/services/ai.py`.
+- Ollama defaults to `http://127.0.0.1:11434` with `qwen3.8:27b-q4_K_M`; see `docs/local-models.md` for startup and synthetic verification.
+- Ollama requires no OpenAI key and never falls back to the hosted provider; keep model names and runtime limits in settings.
 - Application dates are based on `Europe/Zurich`, not UTC or the agent's inferred locale.
 - `.env` is private and may contain live OpenAI, Resend, Strava, session, and database secrets. Never print, quote, commit, or overwrite it. Use `.env.example` to understand the supported keys.
 
@@ -142,6 +148,8 @@ When the owner-host tunnel is active:
 - Shopping periods are fixed Monday-based fortnights anchored to the earliest saved meal week. Main meals, fruit, and snacks (including nuts) contribute to their shopping lists; optional meals are excluded.
 - Raw Strava location data must never enter AI context.
 - OpenAI calls use `store=false`; keep provider models configurable through settings rather than scattering model names.
+- Local AI responses must complete and pass the same schema/domain checks; never persist thinking or partial output.
+- Preserve `openai`, `ollama`, and `fallback` plan provenance in both API and frontend paths.
 
 When modifying workout or nutrition recording, check both the Today and History API/render paths. Persisted actual measurements, difficulty, pain, notes, source/provenance, and diary ownership should remain visible and consistent in both places.
 

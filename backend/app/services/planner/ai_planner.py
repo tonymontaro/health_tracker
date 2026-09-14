@@ -2,10 +2,9 @@ import json
 import logging
 from typing import Any
 
-from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError
-
 from app.core.config import Settings
 from app.schemas.plan import DailyPlanProposal
+from app.services.ai import generate_structured
 
 PLANNER_VERSION = "planner-v1"
 logger = logging.getLogger(__name__)
@@ -78,19 +77,9 @@ Do not output hidden chain-of-thought. Rationale must be concise and user-facing
 """
 
 
-class PlannerProviderError(RuntimeError):
-    """Raised after the OpenAI SDK exhausts retries for a provider or network failure."""
-
-
-class OpenAIPlanner:
+class AIPlanner:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
         self.settings = settings
-        self.client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-        )
 
     def generate(
         self,
@@ -105,42 +94,17 @@ class OpenAIPlanner:
             prompt += json.dumps(correction, default=str, separators=(",", ":"))
         if prompt_label:
             logger.info(
-                "OpenAI planning request · %s · model=%s · reasoning=%s · correction=%s",
+                "AI planning request · %s · provider=%s · model=%s · correction=%s",
                 prompt_label,
-                self.settings.openai_planner_model,
-                self.settings.openai_reasoning_effort,
+                self.settings.ai_provider,
+                self.settings.ai_model("planner"),
                 correction is not None,
             )
-        try:
-            response = self.client.responses.parse(
-                model=self.settings.openai_planner_model,
-                reasoning={"effort": self.settings.openai_reasoning_effort},
-                input=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                text_format=DailyPlanProposal,
-                store=False,
-            )
-        except OpenAIError as exc:
-            message = _provider_error_summary(exc)
-            logger.warning(message)
-            raise PlannerProviderError(message) from exc
-        if response.output_parsed is None:
-            raise ValueError("OpenAI returned no parsed planning proposal")
-        return response.output_parsed
-
-
-def _provider_error_summary(error: OpenAIError) -> str:
-    details = ["OpenAI request failed after automatic retries"]
-    if isinstance(error, APIStatusError):
-        details.append(f"HTTP {error.status_code}")
-        if error.request_id:
-            details.append(f"request ID {error.request_id}")
-        if error.status_code in {408, 409, 429} or error.status_code >= 500:
-            details.append("transient provider error")
-    elif isinstance(error, APIConnectionError):
-        details.append("network or timeout error")
-    else:
-        details.append(type(error).__name__)
-    return " · ".join(details)
+        return generate_structured(
+            self.settings,
+            task="planner",
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=prompt,
+            response_model=DailyPlanProposal,
+            reasoning_effort=self.settings.openai_reasoning_effort,
+        )

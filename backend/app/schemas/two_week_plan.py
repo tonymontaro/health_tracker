@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.plan import PlanSource
+
 WorkoutKind = Literal[
     "strength",
     "bodyweight",
@@ -109,7 +111,7 @@ class TwoWeekPlanProposal(BaseModel):
 
 class TwoWeekPlanDocument(TwoWeekPlanProposal):
     anchor_date: date
-    source: Literal["openai", "fallback"]
+    source: PlanSource
 
 
 def normalize_two_week_plan_payload(payload: dict[str, Any]) -> dict[str, Any]:

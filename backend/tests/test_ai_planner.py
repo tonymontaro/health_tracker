@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import httpx
@@ -5,15 +6,12 @@ import pytest
 from openai import DEFAULT_MAX_RETRIES, InternalServerError
 
 from app.core.config import Settings
-from app.services.planner.openai_planner import (
-    OpenAIPlanner,
-    PlannerProviderError,
-    _provider_error_summary,
-)
+from app.services.ai import AIProviderError, _provider_error_summary
+from app.services.planner.ai_planner import AIPlanner
 
 
-def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors() -> None:
-    planner = OpenAIPlanner(
+def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors(monkeypatch) -> None:
+    planner = AIPlanner(
         Settings(
             APP_ENV="test",
             OPENAI_API_KEY="test-key",
@@ -21,7 +19,6 @@ def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors() -> 
             _env_file=None,
         )
     )
-    assert planner.client.max_retries == DEFAULT_MAX_RETRIES
 
     response = httpx.Response(
         520,
@@ -43,6 +40,10 @@ def test_planner_uses_sdk_retries_and_summarizes_exhausted_provider_errors() -> 
         def parse(self, **kwargs):
             raise provider_error
 
-    planner.client = SimpleNamespace(responses=FailingResponses())
-    with pytest.raises(PlannerProviderError, match="HTTP 520"):
+    def client(**kwargs):
+        assert kwargs["max_retries"] == DEFAULT_MAX_RETRIES
+        return nullcontext(SimpleNamespace(responses=FailingResponses()))
+
+    monkeypatch.setattr("app.services.ai.OpenAI", client)
+    with pytest.raises(AIProviderError, match="HTTP 520"):
         planner.generate({}, prompt_label="TEST REGENERATION")

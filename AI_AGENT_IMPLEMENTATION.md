@@ -73,7 +73,7 @@ Seed the initial profile with the following values, while making all user-editab
 - Location: Zurich, Switzerland
 - Timezone: `Europe/Zurich`
 - Thursday is an office day.
-- Thursday commute is approximately 3 hours total.
+- Thursday commute is approximately 2 hours total.
 - Thursday should default to:
   - rest, or at most very light exercise,
   - high nutrition flexibility because the user often eats with colleagues.
