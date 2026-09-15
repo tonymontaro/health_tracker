@@ -137,7 +137,7 @@ def test_regenerate_outlook_endpoint_requires_auth_and_returns_latest_revision(
 ) -> None:
     api_settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
-        OPENAI_API_KEY=None,
+        AI_ENABLED=False,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -264,7 +264,7 @@ def test_pain_changes_next_day_to_recovery(db: Session, settings: Settings, seed
 def test_ai_candidate_is_validated_and_persisted(db: Session, monkeypatch, seeded) -> None:
     ai_settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
-        OPENAI_API_KEY="fake-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -278,14 +278,14 @@ def test_ai_candidate_is_validated_and_persisted(db: Session, monkeypatch, seede
         return candidate
 
     monkeypatch.setattr(
-        "app.services.planner.openai_two_week_planner.OpenAITwoWeekPlanner.generate",
+        "app.services.planner.codex_two_week_planner.CodexTwoWeekPlanner.generate",
         generate,
     )
     row = ensure_two_week_plan(db, ai_settings, TARGET, use_ai=True)
 
     assert calls == 1
-    assert row.source == "openai"
-    assert row.model == ai_settings.openai_planner_model
+    assert row.source == "codex"
+    assert row.model == ai_settings.codex_planner_model
 
 
 def test_legacy_detailed_horizon_is_read_as_strategic_context(

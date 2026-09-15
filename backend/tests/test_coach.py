@@ -1,6 +1,5 @@
 import json
 from datetime import UTC, date, datetime, timedelta
-from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -96,30 +95,18 @@ def test_ai_coach_receives_story_controls_and_returns_structured_metadata(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    class FakeResponses:
-        def parse(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(
-                output_parsed=CoachMessage(
-                    message=(
-                        "The work was completed cleanly. Picture two runners at sunrise: one races the "
-                        "warm-up, while the other saves the fire for the work that counts. Be the second "
-                        "runner when you recover today."
-                    ),
-                    story_kind="motivational",
-                    story_topic="two sunrise runners",
-                )
-            )
+    def generate(self, **kwargs):
+        captured.update(kwargs)
+        return CoachMessage(
+            message="The work was completed cleanly. Picture two runners at sunrise: one races the warm-up, while the other saves the fire for the work that counts. Be the second runner when you recover today.",
+            story_kind="motivational",
+            story_topic="two sunrise runners",
+        )
 
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            captured["client"] = kwargs
-            self.responses = FakeResponses()
-
-    monkeypatch.setattr(coach_service, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(coach_service.CodexProvider, "generate", generate)
     settings = Settings(
         APP_ENV="test",
-        OPENAI_API_KEY="test-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -145,13 +132,13 @@ def test_ai_coach_receives_story_controls_and_returns_structured_metadata(
         style=style,
     )
 
-    request_payload = json.loads(captured["input"][1]["content"])
+    request_payload = json.loads(captured["prompt"])
     assert response.story_kind == "motivational"
     assert response.story_topic == "two sunrise runners"
     assert request_payload["style"] == style
-    assert "Most messages must contain no story" in captured["input"][0]["content"]
-    assert captured["text_format"] is CoachMessage
-    assert captured["store"] is False
+    assert "Most messages must contain no story" in captured["instructions"]
+    assert captured["response_model"] is CoachMessage
+    assert response.model == settings.codex_qa_model
 
 
 def test_plan_qa_uses_the_same_coach_character() -> None:
@@ -163,24 +150,17 @@ def test_plan_qa_uses_the_same_coach_character() -> None:
 
 
 def test_ai_story_during_cooldown_is_rejected(monkeypatch) -> None:
-    class FakeResponses:
-        def parse(self, **kwargs):
-            return SimpleNamespace(
-                output_parsed=CoachMessage(
-                    message="The lighthouse story returns. Execute today's plan.",
-                    story_kind="motivational",
-                    story_topic="old lighthouse",
-                )
-            )
+    def generate(self, **kwargs):
+        return CoachMessage(
+            message="The lighthouse story returns. Execute today's plan.",
+            story_kind="motivational",
+            story_topic="old lighthouse",
+        )
 
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            self.responses = FakeResponses()
-
-    monkeypatch.setattr(coach_service, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(coach_service.CodexProvider, "generate", generate)
     settings = Settings(
         APP_ENV="test",
-        OPENAI_API_KEY="test-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -199,12 +179,13 @@ def test_ai_story_during_cooldown_is_rejected(monkeypatch) -> None:
     assert response.story_kind == "none"
     assert response.story_topic is None
     assert "lighthouse" not in response.message
+    assert response.model == "deterministic-fallback"
 
 
 def test_fallback_keeps_pain_feedback_serious() -> None:
     fallback_settings = Settings(
         APP_ENV="test",
-        OPENAI_API_KEY=None,
+        AI_ENABLED=False,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )

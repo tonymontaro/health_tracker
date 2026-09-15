@@ -1,13 +1,12 @@
-"""Run a privacy-safe OpenAI Structured Outputs smoke test with fictitious data."""
+"""Run a privacy-safe Codex subscription smoke test with fictitious data."""
 
 import json
 
-from openai import OpenAI
-
 from app.core.config import get_settings
 from app.schemas.api import QAResponse
+from app.services.ai import AIResponseError, CodexProvider
 from app.services.chat import QA_SYSTEM_PROMPT
-from app.services.planner.openai_planner import OpenAIPlanner
+from app.services.planner.codex_planner import CodexPlanner
 
 SYNTHETIC_CONTEXT = {
     "synthetic_test_data": True,
@@ -77,7 +76,7 @@ SYNTHETIC_CONTEXT = {
 
 def main() -> None:
     settings = get_settings()
-    planner = OpenAIPlanner(settings)
+    planner = CodexPlanner(settings)
     proposal = None
     planner_rejections: list[str] = []
     correction = None
@@ -85,56 +84,38 @@ def main() -> None:
         try:
             proposal = planner.generate(SYNTHETIC_CONTEXT, correction=correction)
             break
-        except Exception as exc:  # noqa: BLE001 - mirrors the production fallback boundary.
+        except AIResponseError as exc:
             planner_rejections.append(type(exc).__name__)
             correction = {
                 "errors": [f"{type(exc).__name__}: {str(exc)[:1000]}"],
                 "instruction": "Return a fresh response that satisfies every schema constraint.",
             }
-    plan_for_qa = (
-        proposal.model_dump(mode="json")
-        if proposal
-        else {
-            "source": "synthetic deterministic fallback",
-            "nutrition": {"main_meals": 2},
-            "workout": {"kind": "recovery", "duration_minutes": 20},
-        }
-    )
-    client = OpenAI(
-        api_key=settings.openai_key_value,
-        timeout=120,
-        max_retries=1,
-    )
-    qa_result = client.responses.parse(
-        model=settings.openai_qa_model,
-        reasoning={"effort": "low"},
-        input=[
-            {"role": "system", "content": QA_SYSTEM_PROMPT},
+    if proposal is None:
+        raise AIResponseError("Codex planner smoke test failed.")
+    plan_for_qa = proposal.model_dump(mode="json")
+    qa_result = CodexProvider(settings).generate(
+        model=settings.codex_qa_model,
+        instructions=QA_SYSTEM_PROMPT,
+        prompt=json.dumps(
             {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "synthetic_test_data": True,
-                        "question": "Why is this a conservative starting plan?",
-                        "today_plan": plan_for_qa,
-                        "context": SYNTHETIC_CONTEXT,
-                    },
-                    separators=(",", ":"),
-                ),
+                "synthetic_test_data": True,
+                "question": "Why is this a conservative starting plan?",
+                "today_plan": plan_for_qa,
+                "context": SYNTHETIC_CONTEXT,
             },
-        ],
-        text_format=QAResponse,
-        store=False,
+            separators=(",", ":"),
+        ),
+        response_model=QAResponse,
     )
     print(
         {
-            "planner_model": settings.openai_planner_model,
+            "planner_model": settings.codex_planner_model,
             "planner_parsed": proposal is not None,
             "planner_schema_rejections": planner_rejections,
-            "qa_model": settings.openai_qa_model,
-            "qa_parsed": qa_result.output_parsed is not None,
-            "main_meals": proposal.nutrition.expected_main_meals if proposal else None,
-            "exercises": len(proposal.workout.exercises) if proposal else None,
+            "qa_model": settings.codex_qa_model,
+            "qa_parsed": bool(qa_result.answer),
+            "main_meals": proposal.nutrition.expected_main_meals,
+            "exercises": len(proposal.workout.exercises),
         }
     )
 

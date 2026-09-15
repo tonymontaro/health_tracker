@@ -3,7 +3,6 @@ from datetime import date
 from typing import Any, Protocol
 from uuid import UUID
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,7 @@ from app.schemas.workout_log import (
     WorkoutLogExtraction,
     WorkoutLogResponse,
 )
+from app.services.ai import AIProviderError, AIResponseError, CodexProvider
 from app.services.metrics import recalculate_derived_summary
 from app.services.workout_feedback import ensure_workout_feedback
 
@@ -50,14 +50,8 @@ class WorkoutLogExtractionProvider(Protocol):
 
 class WorkoutLogExtractor:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        self.model = settings.openai_workout_log_model
-        self.client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-            max_retries=0,
-        )
+        self.model = settings.codex_workout_log_model
+        self.client = CodexProvider(settings)
 
     def extract(
         self,
@@ -79,28 +73,23 @@ class WorkoutLogExtractor:
             if correction:
                 payload["correction"] = correction
             try:
-                response = self.client.responses.parse(
+                extraction = self.client.generate(
                     model=self.model,
-                    reasoning={"effort": "low"},
-                    input=[
-                        {"role": "system", "content": WORKOUT_LOG_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": json.dumps(payload, separators=(",", ":")),
-                        },
-                    ],
-                    text_format=WorkoutLogExtraction,
-                    store=False,
+                    instructions=WORKOUT_LOG_SYSTEM_PROMPT,
+                    prompt=json.dumps(payload, separators=(",", ":")),
+                    response_model=WorkoutLogExtraction,
                 )
-                extraction = response.output_parsed
                 if extraction is None:
                     last_errors = ["The model returned no parsed result."]
                 else:
                     last_errors = validate_extraction(extraction, known_ids)
                     if not last_errors:
                         return extraction
-            except Exception as exc:  # noqa: BLE001 - one bounded provider repair is intentional.
-                last_errors = [f"{type(exc).__name__}: {str(exc)[:1000]}"]
+            except AIProviderError:
+                # Retrying cannot repair authentication, limits, or a transport failure.
+                raise
+            except AIResponseError as exc:
+                last_errors = [str(exc)]
             correction = {
                 "errors": last_errors,
                 "instruction": (
@@ -167,7 +156,7 @@ def process_daily_workout_log(
     model = (
         active_extractor.model
         if active_extractor
-        else f"{settings.openai_workout_log_model}:reviewed"
+        else f"{settings.codex_workout_log_model}:reviewed"
     )
     try:
         db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date).with_for_update())

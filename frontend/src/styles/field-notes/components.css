@@ -57,7 +57,7 @@ button.small { min-height: 44px; padding: 0.58rem 0.75rem; font-size: var(--fn-t
 .status-confirmed, .status-completed, .status-matched_by_food_log, .status-processed, .confidence-high { color: #315a38; border-color: #789177; background: rgb(219 225 211 / 70%); }
 .status-skipped, .status-skipped_assumed, .status-discarded_by_food_log, .status-skipped_by_workout_log { color: #5d574f; border-color: #928b80; background: #e7e1d5; }
 .status-assumed_consumed, .confidence-medium { color: #675b2f; border-color: #a7955a; background: #eee7ca; }
-.source-openai { color: #315a38; border-color: var(--sage); }
+.source-openai, .source-codex { color: #315a38; border-color: var(--sage); }
 .source-fallback { color: #675b2f; border-color: #a7955a; }
 .error { color: #912e20; font-size: 0.86rem; }
 .success { color: #315a38; font-weight: 700; }

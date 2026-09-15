@@ -24,15 +24,28 @@ class Settings(BaseSettings):
     app_timezone: str = "Europe/Zurich"
     cors_allowed_origins: str = "http://localhost:5173"
 
-    openai_api_key: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_AI_API_KEY"),
+    ai_enabled: bool = True
+    codex_planner_model: str = Field(
+        default="gpt-5.6-terra",
+        validation_alias=AliasChoices("CODEX_PLANNER_MODEL", "OPENAI_PLANNER_MODEL"),
     )
-    openai_planner_model: str = "gpt-5.6-terra"
-    openai_qa_model: str = "gpt-5.6-luna"
-    openai_food_log_model: str = "gpt-5.6-luna"
-    openai_workout_log_model: str = "gpt-5.6-luna"
-    openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "medium"
+    codex_qa_model: str = Field(
+        default="gpt-5.6-luna",
+        validation_alias=AliasChoices("CODEX_QA_MODEL", "OPENAI_QA_MODEL"),
+    )
+    codex_food_log_model: str = Field(
+        default="gpt-5.6-luna",
+        validation_alias=AliasChoices("CODEX_FOOD_LOG_MODEL", "OPENAI_FOOD_LOG_MODEL"),
+    )
+    codex_workout_log_model: str = Field(
+        default="gpt-5.6-luna",
+        validation_alias=AliasChoices("CODEX_WORKOUT_LOG_MODEL", "OPENAI_WORKOUT_LOG_MODEL"),
+    )
+    codex_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = Field(
+        default="medium",
+        validation_alias=AliasChoices("CODEX_REASONING_EFFORT", "OPENAI_REASONING_EFFORT"),
+    )
+    codex_timeout_seconds: float = Field(default=180, ge=1, le=600)
 
     strava_client_id: int | None = None
     strava_client_secret: SecretStr | None = None
@@ -85,10 +98,6 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
-
-    @property
-    def openai_key_value(self) -> str | None:
-        return self.openai_api_key.get_secret_value() if self.openai_api_key else None
 
     @property
     def resend_key_value(self) -> str | None:

@@ -11,13 +11,13 @@ from app.schemas.two_week_plan import (
     TwoWeekPlanProposal,
     parse_two_week_plan_document,
 )
+from app.services.ai import AIProviderError
+from app.services.planner.codex_two_week_planner import (
+    TWO_WEEK_PLANNER_VERSION,
+    CodexTwoWeekPlanner,
+)
 from app.services.planner.context import build_horizon_planner_context, build_profile_snapshot
 from app.services.planner.domain import validate_two_week_plan
-from app.services.planner.openai_planner import PlannerProviderError
-from app.services.planner.openai_two_week_planner import (
-    TWO_WEEK_PLANNER_VERSION,
-    OpenAITwoWeekPlanner,
-)
 from app.services.planner.two_week_fallback import build_fallback_two_week_plan
 from app.services.training_plan_guide import active_training_plan_guide_revision
 
@@ -199,16 +199,16 @@ def _generate_two_week_plan(
     }
 
     proposal = None
-    source: Literal["openai", "fallback"] = "fallback"
+    source: Literal["codex", "fallback"] = "fallback"
     validation: dict[str, Any] = {"attempts": []}
-    if use_ai and settings.openai_key_value:
-        planner = OpenAITwoWeekPlanner(settings)
+    if use_ai and settings.ai_enabled:
+        planner = CodexTwoWeekPlanner(settings)
         correction: dict[str, Any] | None = None
         last_error: str | None = None
         for attempt in (1, 2):
             try:
                 candidate = planner.generate(context, correction=correction)
-            except PlannerProviderError as exc:
+            except AIProviderError as exc:
                 last_error = str(exc)
                 validation["attempts"].append(
                     {"attempt": attempt, "errors": [last_error], "stage": "provider"}
@@ -236,7 +236,7 @@ def _generate_two_week_plan(
             validation["attempts"].append({"attempt": attempt, "errors": errors, "stage": "domain"})
             if not errors:
                 proposal = candidate
-                source = "openai"
+                source = "codex"
                 break
             last_error = "; ".join(errors)
             correction = {
@@ -244,7 +244,7 @@ def _generate_two_week_plan(
                 "invalid_candidate": candidate.model_dump(mode="json"),
             }
         if proposal is None and last_error:
-            validation["openai_error"] = last_error
+            validation["codex_error"] = last_error
 
     if proposal is None:
         proposal = build_fallback_two_week_plan(
@@ -280,7 +280,7 @@ def _generate_two_week_plan(
         window_end=document.window_end,
         previous_plan_id=previous.id if previous is not None else None,
         profile_snapshot_id=snapshot.id,
-        model=settings.openai_planner_model if source == "openai" else "deterministic-fallback",
+        model=settings.codex_planner_model if source == "codex" else "deterministic-fallback",
         planner_version=TWO_WEEK_PLANNER_VERSION,
         source=source,
         context_snapshot_json=context,

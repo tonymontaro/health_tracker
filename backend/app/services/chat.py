@@ -1,13 +1,13 @@
 import json
 from datetime import date
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import ChatMessage, DailyPlan, UserProfile
 from app.schemas.api import QAResponse
+from app.services.ai import CodexProvider
 from app.services.coach import COACH_CHARACTER_PROMPT
 from app.services.planner.context import build_qa_context
 
@@ -38,10 +38,10 @@ def ask_about_plan(
     profile = db.scalar(select(UserProfile))
     if plan is None or profile is None:
         raise LookupError("Today's plan is not available")
-    if not settings.openai_key_value:
+    if not settings.ai_enabled:
         response = QAResponse(
             answer=(
-                "AI Q&A is unavailable because no API key is configured. "
+                "AI Q&A is disabled in application settings. "
                 "The persisted plan and deterministic fallback remain available."
             ),
             proposed_change=None,
@@ -54,35 +54,16 @@ def ask_about_plan(
         if snapshot is None:
             raise RuntimeError("Plan snapshot is missing")
         context = build_qa_context(db, profile, snapshot, target_date)
-        client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-            max_retries=1,
+        response = CodexProvider(settings).generate(
+            model=settings.codex_qa_model,
+            instructions=QA_SYSTEM_PROMPT,
+            prompt=json.dumps(
+                {"question": question, "today_plan": plan.current_plan_json, "context": context},
+                default=str,
+                separators=(",", ":"),
+            ),
+            response_model=QAResponse,
         )
-        result = client.responses.parse(
-            model=settings.openai_qa_model,
-            reasoning={"effort": "low"},
-            input=[
-                {"role": "system", "content": QA_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "question": question,
-                            "today_plan": plan.current_plan_json,
-                            "context": context,
-                        },
-                        default=str,
-                        separators=(",", ":"),
-                    ),
-                },
-            ],
-            text_format=QAResponse,
-            store=False,
-        )
-        if result.output_parsed is None:
-            raise ValueError("OpenAI returned no parsed Q&A response")
-        response = result.output_parsed
     message = ChatMessage(
         message_date=target_date,
         question=question,

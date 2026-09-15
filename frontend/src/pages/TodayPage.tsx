@@ -759,7 +759,7 @@ function ChatPanel({
 }
 
 function sourceLabel(source: Today["source"]): string {
-  return source === "openai" ? "AI planned" : "Reliable fallback";
+  return source === "codex" ? "Codex planned" : source === "openai" ? "AI planned" : "Reliable fallback";
 }
 
 function CoachFeedbackNote({ feedback, loading }: { feedback: string | null; loading: boolean }) {

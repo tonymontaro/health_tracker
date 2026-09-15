@@ -15,10 +15,15 @@ from app.db.models import (
 )
 from app.schemas.plan import DailyPlanDocument, canonicalize_proposal
 from app.schemas.two_week_plan import parse_two_week_plan_document
+from app.services.ai import AIProviderError
 from app.services.meal_planning import (
     apply_current_meal_roles,
     ensure_meal_weeks,
     scheduled_nutrition,
+)
+from app.services.planner.codex_planner import (
+    PLANNER_VERSION,
+    CodexPlanner,
 )
 from app.services.planner.context import (
     build_daily_planner_context,
@@ -27,11 +32,6 @@ from app.services.planner.context import (
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
-from app.services.planner.openai_planner import (
-    PLANNER_VERSION,
-    OpenAIPlanner,
-    PlannerProviderError,
-)
 from app.services.planner.two_week import (
     ensure_two_week_plan,
     horizon_uses_active_training_plan_guide,
@@ -76,7 +76,7 @@ def generate_daily_plan(
     context["scheduled_nutrition"] = nutrition.model_dump(mode="json") if nutrition else None
     run = PlanningRun(
         plan_date=plan_date,
-        model=settings.openai_planner_model if use_ai else "deterministic-fallback",
+        model=settings.codex_planner_model if use_ai else "deterministic-fallback",
         planner_version=PLANNER_VERSION,
         status="running",
         context_snapshot_json=context,
@@ -87,16 +87,16 @@ def generate_daily_plan(
     db.flush()
 
     proposal = None
-    source: Literal["openai", "fallback"] = "fallback"
+    source: Literal["codex", "fallback"] = "fallback"
     validation: dict[str, Any] = {"attempts": []}
-    if use_ai and settings.openai_key_value:
-        planner = OpenAIPlanner(settings)
+    if use_ai and settings.ai_enabled:
+        planner = CodexPlanner(settings)
         correction: dict[str, Any] | None = None
         last_error: str | None = None
         for attempt in (1, 2):
             try:
                 candidate = planner.generate(context, correction=correction)
-            except PlannerProviderError as exc:
+            except AIProviderError as exc:
                 last_error = str(exc)
                 validation["attempts"].append(
                     {"attempt": attempt, "errors": [last_error], "stage": "provider"}
@@ -121,7 +121,7 @@ def generate_daily_plan(
             validation["attempts"].append({"attempt": attempt, "errors": errors, "stage": "domain"})
             if not errors:
                 proposal = candidate
-                source = "openai"
+                source = "codex"
                 break
             last_error = "; ".join(errors)
             correction = {
@@ -129,7 +129,7 @@ def generate_daily_plan(
                 "invalid_candidate": candidate.model_dump(mode="json"),
             }
         if proposal is None and last_error:
-            validation["openai_error"] = last_error
+            validation["codex_error"] = last_error
 
     if proposal is None:
         horizon_document = parse_two_week_plan_document(horizon.plan_json)
@@ -175,7 +175,8 @@ def generate_daily_plan(
         source=source,
     )
     payload = document.model_dump(mode="json")
-    run.status = "succeeded" if source == "openai" else "fallback"
+    run.status = "succeeded" if source == "codex" else "fallback"
+    run.model = settings.codex_planner_model if source == "codex" else "deterministic-fallback"
     run.model_output_json = proposal.model_dump(mode="json")
     run.validation_result_json = validation
     plan = DailyPlan(

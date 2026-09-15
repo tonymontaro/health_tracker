@@ -39,13 +39,13 @@ React web app -----------+
 Chrome extension --------+---> FastAPI ---> PostgreSQL
 Scheduled job commands --+       |   |
                                  |   +---> Resend Email API
-                                 |   +---> OpenAI Responses API
+                                 |   +---> Local Codex SDK (ChatGPT subscription)
                                  +-------> Strava API
 ```
 
 PostgreSQL is the source of truth.
 Python calculates state and enforces all hard constraints.
-OpenAI chooses and explains high-quality options within those constraints.
+Codex chooses and explains high-quality options within those constraints.
 The web app, extension, and emails all render the same persisted canonical plan.
 
 See [docs/architecture.md](docs/architecture.md) for the detailed flow.
@@ -69,7 +69,8 @@ docs/         Architecture documentation
 ## Local setup
 
 Copy `.env.example` values into your private `.env` as needed.
-The application also accepts the legacy `OPEN_AI_API_KEY` spelling for compatibility.
+AI uses the local macOS user's Codex ChatGPT login.
+API keys are ignored by the AI integration.
 
 Run:
 
@@ -77,7 +78,8 @@ Run:
 ./scripts/dev_setup.sh
 ```
 
-The setup creates a project-local virtual environment, installs approved project dependencies, installs and starts native PostgreSQL 17 through Homebrew, applies migrations, and seeds the initial profile and catalogs. PostgreSQL runs as a macOS login service on port `55432`; Docker is not used.
+The setup creates a project-local virtual environment, installs approved project dependencies, installs and starts native PostgreSQL 17 through Homebrew, applies migrations, and seeds the initial profile and catalogs.
+PostgreSQL runs as a macOS login service on port `55432`; Docker is not used.
 
 The default development login is:
 
@@ -101,7 +103,7 @@ Important groups are:
 - PostgreSQL: `DATABASE_URL`
 - Public URLs: `APP_BASE_URL`, `API_BASE_URL`
 - Time: `APP_TIMEZONE`
-- OpenAI: `OPENAI_API_KEY`, `OPENAI_PLANNER_MODEL`, `OPENAI_QA_MODEL`, `OPENAI_FOOD_LOG_MODEL`, `OPENAI_WORKOUT_LOG_MODEL`, `OPENAI_REASONING_EFFORT`
+- Codex: `AI_ENABLED`, `CODEX_PLANNER_MODEL`, `CODEX_QA_MODEL`, `CODEX_FOOD_LOG_MODEL`, `CODEX_WORKOUT_LOG_MODEL`, `CODEX_REASONING_EFFORT`, `CODEX_TIMEOUT_SECONDS`
 - Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID`, `STRAVA_INITIAL_SYNC_DAYS`, `STRAVA_SYNC_LOOKBACK_DAYS`, `STRAVA_SYNC_INTERVAL_MINUTES`
 - Email: `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_TO`
 - Security: `SESSION_SECRET`, `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, `EXTENSION_API_TOKEN`
@@ -152,9 +154,9 @@ Garmin Connect activity CSV exports can be imported into canonical workout histo
 .venv/bin/health-autopilot import-garmin --file "/path/to/Activities.csv"
 ```
 
-Imports are idempotent. Each row retains Garmin CSV provenance and the available distance, time,
-pace, elevation, heart-rate, cadence, power, calories, and training-effect fields. Imported workouts
-feed the same derived metrics and AI context as other completed workouts.
+Imports are idempotent.
+Each row retains Garmin CSV provenance and the available distance, time, pace, elevation, heart-rate, cadence, power, calories, and training-effect fields.
+Imported workouts feed the same derived metrics and AI context as other completed workouts.
 
 The active target can be edited in Settings or set from the command line:
 
@@ -309,7 +311,7 @@ Correctness does not depend on a single in-memory timer.
 
 ## Verification
 
-Create the test database once when using the local Compose PostgreSQL service:
+Create the test database once when using the native PostgreSQL service:
 
 ```bash
 ./scripts/native_postgres.sh setup
@@ -327,16 +329,61 @@ This runs Ruff, mypy, ESLint, TypeScript checks, the focused backend test suite,
 
 Production requires HTTPS, managed or protected PostgreSQL, protected backups, a strong random `SESSION_SECRET`, non-default credentials, restrictive CORS origins, Resend configuration, and scheduled job invocation.
 The frontend can be hosted as static assets.
-The backend and scheduler can use the supplied backend image or an equivalent Python runtime.
+The backend and scheduler require a local Python runtime with the Codex SDK and the owner's ChatGPT login.
 The database must not be exposed publicly.
 
-## OpenAI configuration
+## Codex setup and configuration
 
-Planning uses the Responses API with Pydantic Structured Outputs.
-The prompt is versioned, all structured output is validated, domain rules are validated again in Python, one repair attempt is allowed, and deterministic fallback is always available.
-Daily food text uses a separate configurable model and a strict meal, component, portion, nutrient, and recommendation-match schema.
-The default models are configurable and are never embedded throughout the codebase.
-Application history remains in PostgreSQL and API calls use `store=false`.
+All AI features use the official Python `openai-codex` SDK and its pinned CLI runtime through local standard input/output.
+The backend starts and closes a Codex process for each request, so a Codex window or manually started server is unnecessary.
+Models still run on OpenAI's servers and require internet access.
+Requests use the signed-in ChatGPT subscription and share its usage allowance with other Codex work.
+The application never authenticates AI requests with an API key or falls back to API billing.
+
+Install or update the backend dependencies from the repository root:
+
+```bash
+.venv/bin/python -m pip install -e './backend[dev]'
+make codex-check
+```
+
+If the check reports that you are signed out, run `make codex-login` and complete the browser's ChatGPT sign-in.
+These commands use the SDK's bundled executable, so `codex` does not need to be on your terminal's `PATH`.
+The virtual environment is `.venv`; activate it with `source .venv/bin/activate` when wanted.
+Run the API and scheduler as the same macOS user who signed in.
+Settings shows the current Codex sign-in status.
+After upgrading a running app, restart the API and scheduler so both load the new provider.
+Saved plans remain unchanged until normal generation or an explicit regeneration.
+
+`CODEX_*_MODEL` and `CODEX_REASONING_EFFORT` configure the models and effort.
+The old `OPENAI_*_MODEL` and `OPENAI_REASONING_EFFORT` names remain accepted as aliases, with `CODEX_*` taking priority.
+Existing private `.env` files do not need rewriting, and old API-key entries are ignored.
+Set `AI_ENABLED=false` to use the existing deterministic fallbacks; diary analysis is then unavailable.
+`CODEX_TIMEOUT_SECONDS` defaults to 180 seconds per attempt, including startup and authentication.
+At most two Codex requests run concurrently per application process; additional requests receive a busy error or the feature's existing fallback.
+
+The prompt is versioned, outputs are constrained by JSON Schema and validated by Pydantic, and Python checks domain rules before persistence.
+Invalid structured or domain output can receive one repair attempt where supported.
+Authentication, usage-limit, timeout, and connection failures stop the request without a repair attempt.
+Planning and coaching retain rule-based fallbacks; diary and chat errors return a clear error without saving a partial result.
+Original recommendations, corrected history, meal calendars, shopping quantities, and diary ownership keep their existing behavior.
+Historical `openai` source labels remain readable; new AI plans record `codex`.
+
+Codex receives only each feature's supplied context, with personal tools, MCP servers, plugins, hooks, web search, memories, shell access, and host skill discovery disabled.
+Requests run in temporary directories under a read-only agent sandbox, with fresh ephemeral threads, transcript history disabled, and telemetry exporters disabled.
+Temporary runtime logs are deleted when the request finishes.
+Application history remains in PostgreSQL.
+These local controls are not equivalent to the previous Responses API's `store=false` setting; ChatGPT account/workspace data policies govern the remote processing.
+Review [Codex authentication and data handling](https://learn.chatgpt.com/docs/auth) and [subscription limits](https://learn.chatgpt.com/docs/pricing).
+
+Verify real Codex requests using fictitious data only:
+
+```bash
+make codex-smoke
+```
+
+This consumes subscription usage and tests food extraction, daily planning, and chat without accessing the health database.
+The ordinary `make verify` suite blocks live Codex calls.
 
 ## Daily food recording
 
@@ -344,7 +391,7 @@ The Today page accepts a short free-text description of the food and drinks cons
 After successful AI extraction, every nutrition recommendation for that date is marked as matched or discarded and separate actual meal entries are stored with estimated average portions.
 Submitting revised text replaces only the prior diary-owned entries for that day, preserving actuals corrected later in History.
 The original daily plan remains immutable.
-If OpenAI is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
+If Codex is unavailable or the structured result fails validation, the transaction does not start and no recommendation is discarded.
 
 ## Strava activity import
 
@@ -393,12 +440,12 @@ Done records the recommendation unchanged with that exercise's selected difficul
 The Today page offers structured workout completion and an alternate free-text workout diary.
 The diary and selected-day Strava retrieval appear first in the Record drawer.
 Pain is described in the diary text and remains part of the validated extracted record.
-The free-text workflow first sends only the diary text and today's workout suggestions to OpenAI Structured Outputs without changing stored workout data.
+The free-text workflow first sends only the diary text and today's workout suggestions to Codex for structured extraction without changing stored workout data.
 The resulting draft can be corrected, deleted, or extended with manual exercises before a separately validated submission records it.
 Validated results contain typed activities, measurements, difficulty, pain, notes, assumptions, and optional recommendation matches.
 Matched recommendations become completed, unmatched recommendations become skipped by the diary, and unplanned exercise becomes a separate completed workout.
 Re-analysis atomically replaces only entries still controlled by that diary and preserves later Strava imports or History corrections.
-If OpenAI is unavailable or validation fails, no workout state changes.
+If Codex is unavailable or validation fails, no workout state changes.
 
 ## Key domain rules
 

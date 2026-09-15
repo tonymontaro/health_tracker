@@ -216,7 +216,7 @@ class ProfileSnapshotSummary(BaseModel):
 
 class DailyPlanDocument(BaseModel):
     plan_date: date
-    source: Literal["openai", "fallback"]
+    source: Literal["openai", "codex", "fallback"]
     profile_snapshot: ProfileSnapshotSummary
     nutrition: NutritionPlan
     workout: WorkoutPlan
@@ -236,7 +236,7 @@ def canonicalize_proposal(
     *,
     plan_date: date,
     snapshot: ProfileSnapshotSummary,
-    source: Literal["openai", "fallback"],
+    source: Literal["openai", "codex", "fallback"],
 ) -> DailyPlanDocument:
     nutrition = NutritionPlan(
         meal_1=MealRecommendation(

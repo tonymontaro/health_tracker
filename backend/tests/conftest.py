@@ -50,13 +50,12 @@ def seeded(db: Session, settings: Settings):
 
 
 @pytest.fixture(autouse=True)
-def prevent_live_meal_provider_calls(monkeypatch):
+def prevent_live_codex_calls(monkeypatch):
+    from app.services.ai import AIProviderError
+
     def offline_provider(**kwargs):
-        raise RuntimeError("Live AI calls are disabled in tests")
+        raise AIProviderError("Live Codex calls are disabled in tests")
 
-    from types import SimpleNamespace
-
-    monkeypatch.setattr(
-        "app.services.meal_planning.OpenAI",
-        lambda **kwargs: SimpleNamespace(responses=SimpleNamespace(parse=offline_provider)),
-    )
+    # Block the actual process boundary for every AI feature. Individual tests
+    # replace the provider or SDK explicitly with a fake.
+    monkeypatch.setattr("app.services.ai.AsyncCodex", offline_provider)

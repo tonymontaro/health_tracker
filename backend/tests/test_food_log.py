@@ -221,7 +221,7 @@ def test_food_log_endpoint_requires_auth_and_records_with_bearer_token(
 ) -> None:
     api_settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
-        OPENAI_API_KEY="fake-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )

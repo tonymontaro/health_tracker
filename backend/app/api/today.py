@@ -34,6 +34,7 @@ from app.schemas.workout_log import (
     WorkoutLogResponse,
     WorkoutLogSubmissionRequest,
 )
+from app.services.ai import AIProviderError
 from app.services.emergency_plate import EMERGENCY_PLATE
 from app.services.food_log import (
     FoodLogExtractionError,
@@ -405,10 +406,10 @@ def record_food_log(
     try:
         return process_daily_food_log(db, settings, target, payload.text)
     except RuntimeError as exc:
-        if str(exc) == "OPENAI_API_KEY is not configured":
+        if isinstance(exc, AIProviderError):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Food analysis requires an OpenAI API key. Nothing was changed.",
+                detail=f"{exc} Nothing was changed.",
             ) from exc
         if isinstance(exc, FoodLogExtractionError):
             raise HTTPException(
@@ -602,10 +603,10 @@ def analyze_workout_log(
     try:
         return analyze_daily_workout_log(db, settings, target, payload.text)
     except RuntimeError as exc:
-        if str(exc) == "OPENAI_API_KEY is not configured":
+        if isinstance(exc, AIProviderError):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Workout analysis requires an OpenAI API key. Nothing was changed.",
+                detail=f"{exc} Nothing was changed.",
             ) from exc
         if isinstance(exc, WorkoutLogExtractionError):
             raise HTTPException(

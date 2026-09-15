@@ -94,7 +94,7 @@ def test_difficulty_only_history_update_preserves_workout_provenance(
 def test_failed_ai_planning_reaches_fallback(db: Session, monkeypatch, seeded) -> None:
     settings = Settings(
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
-        OPENAI_API_KEY="fake-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
     )
 
@@ -105,9 +105,9 @@ def test_failed_ai_planning_reaches_fallback(db: Session, monkeypatch, seeded) -
         calls += 1
         raise RuntimeError("provider unavailable")
 
-    monkeypatch.setattr("app.services.planner.openai_planner.OpenAIPlanner.generate", fail)
+    monkeypatch.setattr("app.services.planner.codex_planner.CodexPlanner.generate", fail)
     monkeypatch.setattr(
-        "app.services.planner.openai_two_week_planner.OpenAITwoWeekPlanner.generate",
+        "app.services.planner.codex_two_week_planner.CodexTwoWeekPlanner.generate",
         fail,
     )
     plan = generate_daily_plan(db, settings, TARGET, use_ai=True)

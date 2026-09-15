@@ -2,13 +2,13 @@ import json
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal, TypedDict, cast
 
-from openai import OpenAI, OpenAIError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import NotificationEvent, WorkoutCoachFeedback
+from app.services.ai import AIProviderError, AIResponseError, CodexProvider
 
 CoachMoment = Literal["workout_feedback", "morning_email", "evening_email"]
 StoryKind = Literal["none", "humorous", "motivational"]
@@ -61,6 +61,12 @@ Write 2-4 compact sentences in one paragraph. Do not use headings or hidden chai
 
 
 class CoachMessage(BaseModel):
+    _model: str = PrivateAttr(default="deterministic-fallback")
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     message: str = Field(min_length=1, max_length=900)
     story_kind: StoryKind
     story_topic: str | None = Field(max_length=120)
@@ -115,32 +121,21 @@ def coach_response(
         "recent_story_topics": [],
         "recent_messages": [],
     }
-    if not settings.openai_key_value:
+    if not settings.ai_enabled:
         return _fallback_response(moment, facts)
     try:
-        result = OpenAI(
-            api_key=settings.openai_key_value, timeout=60, max_retries=1
-        ).responses.parse(
-            model=settings.openai_qa_model,
-            reasoning={"effort": "low"},
-            input=[
-                {"role": "system", "content": COACH_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {"moment": moment, "facts": facts, "style": style_context},
-                        default=str,
-                    ),
-                },
-            ],
-            text_format=CoachMessage,
-            store=False,
+        response = CodexProvider(settings).generate(
+            model=settings.codex_qa_model,
+            instructions=COACH_SYSTEM_PROMPT,
+            prompt=json.dumps(
+                {"moment": moment, "facts": facts, "style": style_context}, default=str
+            ),
+            response_model=CoachMessage,
         )
-        if result.output_parsed:
-            response = result.output_parsed
-            if _story_contract_is_valid(response, facts, style_context):
-                return response
-    except (OpenAIError, ValidationError):
+        if _story_contract_is_valid(response, facts, style_context):
+            response._model = settings.codex_qa_model
+            return response
+    except (AIProviderError, AIResponseError):
         pass
     return _fallback_response(moment, facts)
 

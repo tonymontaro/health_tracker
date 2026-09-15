@@ -1,11 +1,9 @@
 import asyncio
 from copy import deepcopy
 from datetime import date, timedelta
-from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -146,9 +144,7 @@ def test_daily_regeneration_updates_calendar_and_list_preserving_originals(db, s
     assert week.plan_json == original_week
 
 
-def test_meal_provider_validation_repairs_before_persisting_and_disables_storage(
-    db, settings, seeded, monkeypatch
-):
+def test_meal_provider_validation_repairs_before_persisting(db, settings, seeded, monkeypatch):
     # Use a valid fallback only to construct the provider fixture, then remove its rows.
     weeks = ensure_meal_weeks(db, settings, MONDAY, use_ai=False)
     days = [day for week in weeks for day in week.plan_json["days"]]
@@ -175,20 +171,20 @@ def test_meal_provider_validation_repairs_before_persisting_and_disables_storage
     assert _selection_errors(db, seeded, bad, MONDAY, set())
     calls = []
 
-    def parse(**kwargs):
+    def generate(self, **kwargs):
         assert db.scalar(select(WeeklyMealPlan.id)) is None
-        assert kwargs["store"] is False
+        assert kwargs["response_model"] is MealPlanProposal
         calls.append(kwargs)
-        return SimpleNamespace(output_parsed=bad if len(calls) == 1 else proposal)
+        return bad if len(calls) == 1 else proposal
 
     monkeypatch.setattr(
-        "app.services.meal_planning.OpenAI",
-        lambda **kwargs: SimpleNamespace(responses=SimpleNamespace(parse=parse)),
+        "app.services.meal_planning.CodexProvider.generate",
+        generate,
     )
-    settings.openai_api_key = SecretStr("test-key")
+    settings.ai_enabled = True
     weeks = ensure_meal_weeks(db, settings, MONDAY)
     assert len(calls) == 2
-    assert all(week.source == "openai" for week in weeks)
+    assert all(week.source == "codex" for week in weeks)
     assert weeks[0].validation_result_json["attempts"][0]["errors"]
 
 

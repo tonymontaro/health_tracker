@@ -9,7 +9,7 @@ Requires-Dist: email-validator<3,>=2.2
 Requires-Dist: fastapi<1,>=0.116
 Requires-Dist: httpx<1,>=0.28
 Requires-Dist: jinja2<4,>=3.1
-Requires-Dist: openai<3,>=1.99
+Requires-Dist: openai-codex==0.154.0
 Requires-Dist: psycopg[binary]<4,>=3.2
 Requires-Dist: pwdlib[argon2]<1,>=0.2
 Requires-Dist: pydantic-settings<3,>=2.10

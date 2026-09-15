@@ -15,6 +15,7 @@ from app.schemas.api import (
     ProfileResponse,
     ProfileUpdate,
 )
+from app.services.ai import CodexProvider
 
 router = APIRouter(tags=["profile"])
 
@@ -74,11 +75,14 @@ def get_runtime_settings(
 ) -> dict[str, object]:
     return {
         "app_timezone": settings.app_timezone,
-        "planner_model": settings.openai_planner_model,
-        "qa_model": settings.openai_qa_model,
-        "workout_log_model": settings.openai_workout_log_model,
-        "reasoning_effort": settings.openai_reasoning_effort,
-        "openai_configured": bool(settings.openai_key_value),
+        "planner_model": settings.codex_planner_model,
+        "qa_model": settings.codex_qa_model,
+        "food_log_model": settings.codex_food_log_model,
+        "workout_log_model": settings.codex_workout_log_model,
+        "reasoning_effort": settings.codex_reasoning_effort,
+        "ai_provider": "codex",
+        "ai_enabled": settings.ai_enabled,
+        **CodexProvider(settings).status(),
         "email_provider": "resend",
         "resend_configured": settings.resend_configured,
         "strava_configured": settings.strava_configured,

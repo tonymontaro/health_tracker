@@ -109,7 +109,7 @@ class TwoWeekPlanProposal(BaseModel):
 
 class TwoWeekPlanDocument(TwoWeekPlanProposal):
     anchor_date: date
-    source: Literal["openai", "fallback"]
+    source: Literal["openai", "codex", "fallback"]
 
 
 def normalize_two_week_plan_payload(payload: dict[str, Any]) -> dict[str, Any]:

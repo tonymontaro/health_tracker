@@ -13,8 +13,7 @@ from app.db.models import MealTemplate, WeeklyMealPlan
 
 def ingredient_quantity(ingredient: dict[str, Any]) -> dict[str, Any]:
     label = str(ingredient["quantity"]).strip()
-    match = re.fullmatch(
-        r"(\d+(?:\.\d+)?)\s*(kg|g cooked|g|ml|l|items?|eggs?)?", label)
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(kg|g cooked|g|ml|l|items?|eggs?)?", label)
     if not match:
         raise ValueError(f"Ingredient quantity cannot be combined: {label}")
     quantity = Decimal(match[1])
@@ -31,21 +30,18 @@ def ingredient_quantity(ingredient: dict[str, Any]) -> dict[str, Any]:
 
 def shopping_ingredients_for_meal(db: Session, meal: dict[str, Any]) -> list[dict[str, Any]]:
     """Read actual recipe quantities, preserving unparseable legacy lines for manual review."""
-    template = db.scalar(select(MealTemplate).where(
-        MealTemplate.name == meal["template_name"]))
+    template = db.scalar(select(MealTemplate).where(MealTemplate.name == meal["template_name"]))
     if template is None:
         return [{"note": str(line)} for line in meal.get("ingredients", [])]
     result = []
-    names = sorted(
-        (item["name"] for item in template.ingredients_json), key=len, reverse=True)
+    names = sorted((item["name"] for item in template.ingredients_json), key=len, reverse=True)
     for line in meal.get("ingredients", []):
         name = next((name for name in names if line.endswith(" " + name)), None)
         try:
             if name is None:
                 raise ValueError("Unknown ingredient")
             result.append(
-                ingredient_quantity(
-                    {"name": name, "quantity": line[: -len(name)].strip()})
+                ingredient_quantity({"name": name, "quantity": line[: -len(name)].strip()})
             )
         except ValueError:
             result.append({"note": line})
@@ -56,8 +52,7 @@ def shopping_list(days: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], lis
     totals: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
     notes = set()
     for day in days:
-        main_meals = [meal for meal in day["meals"]
-                      if meal.get("expected", True)]
+        main_meals = [meal for meal in day["meals"] if meal.get("expected", True)]
         for entry in [*main_meals, *day.get("fruits", []), *day.get("snacks", [])]:
             for ingredient in entry.get("shopping_ingredients", []):
                 if "note" in ingredient:
@@ -77,9 +72,11 @@ def shopping_list(days: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], lis
         }
         for (name, unit), quantity in sorted(totals.items())
     ]
-    notes.update(
-        []
-    )
+    if any(unit == "g cooked" for _, unit in totals):
+        notes.add(
+            "Quantities labelled g cooked are cooked weights. Choose ready-cooked or "
+            "cooked/drained products; do not treat these quantities as dry weights."
+        )
     return items, sorted(notes)
 
 
@@ -89,8 +86,7 @@ def shopping_ingredients_for_extra(db: Session, item: dict[str, Any]) -> list[di
     try:
         return [ingredient_quantity({"name": item["name"], "quantity": label.split(",", 1)[0]})]
     except ValueError:
-        template = db.scalar(select(MealTemplate).where(
-            MealTemplate.name == item["name"]))
+        template = db.scalar(select(MealTemplate).where(MealTemplate.name == item["name"]))
         if template:
             return [ingredient_quantity(ingredient) for ingredient in template.ingredients_json]
         return [{"note": f"{item['name']}: {label}"}]

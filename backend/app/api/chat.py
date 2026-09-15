@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.db.models import ChatMessage, DailyPlan
 from app.db.session import get_db
 from app.schemas.api import ChatMessageResponse, QuestionRequest, QuestionResponse
+from app.services.ai import AIProviderError, AIResponseError
 from app.services.chat import ask_about_plan
 from app.services.history import replace_recommendation
 from app.services.recording_dates import current_recording_date
@@ -67,6 +68,12 @@ def ask_question(
         message = ask_about_plan(db, settings, payload.question, today)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AIProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AIResponseError as exc:
+        raise HTTPException(
+            status_code=502, detail="Codex returned an invalid answer. Please retry."
+        ) from exc
     return QuestionResponse(
         message_id=message.id,
         answer=message.answer,

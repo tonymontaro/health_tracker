@@ -16,6 +16,7 @@ from app.services.planner.orchestrator import generate_daily_plan
 
 def test_questions_and_answers_are_persisted_and_listed_newest_first(db: Session, seeded) -> None:
     api_settings = Settings(
+        AI_ENABLED=False,
         DATABASE_URL="postgresql+psycopg://health:health@localhost:55432/health_test",
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,

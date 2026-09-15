@@ -2,7 +2,6 @@ import json
 from datetime import date
 from typing import Any, Protocol
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +14,7 @@ from app.db.models import (
     UserProfile,
 )
 from app.schemas.food_log import FoodLogExtraction, FoodLogResponse
+from app.services.ai import AIProviderError, AIResponseError, CodexProvider
 from app.services.metrics import recalculate_derived_summary
 
 FOOD_LOG_SYSTEM_PROMPT = """Interpret one free-text food diary for a single calendar day.
@@ -50,14 +50,8 @@ class FoodLogExtractionProvider(Protocol):
 
 class FoodLogExtractor:
     def __init__(self, settings: Settings) -> None:
-        if not settings.openai_key_value:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        self.model = settings.openai_food_log_model
-        self.client = OpenAI(
-            api_key=settings.openai_key_value,
-            timeout=120,
-            max_retries=0,
-        )
+        self.model = settings.codex_food_log_model
+        self.client = CodexProvider(settings)
 
     def extract(
         self,
@@ -82,20 +76,12 @@ class FoodLogExtractor:
             if correction:
                 payload["correction"] = correction
             try:
-                response = self.client.responses.parse(
+                extraction = self.client.generate(
                     model=self.model,
-                    reasoning={"effort": "low"},
-                    input=[
-                        {"role": "system", "content": FOOD_LOG_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": json.dumps(payload, separators=(",", ":")),
-                        },
-                    ],
-                    text_format=FoodLogExtraction,
-                    store=False,
+                    instructions=FOOD_LOG_SYSTEM_PROMPT,
+                    prompt=json.dumps(payload, separators=(",", ":")),
+                    response_model=FoodLogExtraction,
                 )
-                extraction = response.output_parsed
                 if extraction is None:
                     last_errors = ["The model returned no parsed result."]
                 else:
@@ -105,8 +91,11 @@ class FoodLogExtractor:
                     )
                     if not last_errors:
                         return extraction
-            except Exception as exc:  # noqa: BLE001 - provider errors use one bounded repair attempt.
-                last_errors = [f"{type(exc).__name__}: {str(exc)[:1000]}"]
+            except AIProviderError:
+                # Retrying cannot repair authentication, limits, or a transport failure.
+                raise
+            except AIResponseError as exc:
+                last_errors = [str(exc)]
             correction = {
                 "errors": last_errors,
                 "instruction": "Return a fresh result that fixes every error without adding unmentioned food.",

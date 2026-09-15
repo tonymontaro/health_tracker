@@ -1,16 +1,32 @@
 # Architecture
 
 Health Autopilot is a single-user modular monolith.
-PostgreSQL is the source of truth, FastAPI owns business behavior, and OpenAI operates only inside validated planning and Q&A boundaries.
+PostgreSQL is the source of truth, FastAPI owns business behavior, and Codex operates only inside validated planning and Q&A boundaries.
 
 ```text
 React web app -----------+
 Chrome extension --------+---> FastAPI ---> PostgreSQL
 Scheduled job commands --+       |   |
                                  |   +---> Resend Email API
-                                 |   +---> OpenAI Responses API
+                                 |   +---> Local Codex SDK (ChatGPT subscription)
                                  +-------> Strava API
 ```
+
+## Codex request boundary
+
+`app.services.ai.CodexProvider` wraps the official Python SDK and its version-matched local runtime over standard input/output.
+Synchronous API services and scheduler jobs call the same adapter.
+The adapter uses asynchronous SDK operations internally so an overall timeout can cancel initialization or generation and close the runtime.
+Two request slots per process bound concurrency; excess work fails promptly without spawning another runtime.
+There is no extra listening port or persistent Codex server to supervise.
+The model itself runs remotely through the user's ChatGPT subscription.
+
+Each operation supplies its existing instructions, context, response model, and configured Codex model.
+The adapter derives a JSON Schema, validates the completed JSON with Pydantic, and returns a typed result to the existing domain checks.
+Schema errors contain only field paths and error types, and provider failures use fixed user-facing messages rather than raw bodies.
+Provider errors do not trigger schema repair; existing domain repair and deterministic fallback policies remain in the services.
+Diary provider calls and validation still finish before any record mutation.
+New plans use the `codex` source; schemas continue to accept historical `openai` records without rewriting them.
 
 ## Planning flow
 
@@ -26,7 +42,7 @@ Derived metrics and ProfileSnapshot
 RecedingHorizonContext + previous horizon revision
        |
        v
-OpenAI 14-day structured proposal
+Codex 14-day structured proposal
        |
        v
 Pydantic and domain validation
@@ -45,7 +61,7 @@ Immutable TwoWeekPlan revision for this anchor date
 Task-specific Daily PlannerContext with today's strategy and three-day lookahead
        |
        v
-OpenAI structured daily proposal
+Codex structured daily proposal
        |
        v
 Pydantic and domain validation
@@ -119,7 +135,7 @@ An already-created canonical daily plan remains unchanged, while tomorrow onward
 ## Meal selection policy
 
 Calendar meal planning uses the curated template catalog, profile limits, preferences and allergies, recent recommendation history, training evidence, and the active training guide.
-It asks OpenAI for fourteen consecutive days beginning on a Monday using `OPENAI_PLANNER_MODEL`, Structured Outputs, and `store=false`.
+It asks Codex for fourteen consecutive days beginning on a Monday using `CODEX_PLANNER_MODEL` and a JSON Schema-constrained response.
 The planner may repair one invalid result before using a validated deterministic fallback, whose source is visible in the Meals page.
 Python checks date coverage, catalog membership, allergies, meal count, consecutive-day variety, and cooking effort before storing a week.
 Monday through Saturday meals must take at most 20 hands-on minutes, 30 total minutes, and an effort score of two.
@@ -188,7 +204,7 @@ History corrections update the actual entries and recalculate derived summaries 
 Food diary text + today's nutrition suggestions + food catalog
                             |
                             v
-                  OpenAI Structured Output
+                  Codex structured JSON
                             |
                             v
               Pydantic and domain validation
@@ -217,7 +233,7 @@ Food logging does not alter the canonical plan or workout entries.
 Strava OAuth and scheduled sync          Free-text workout diary
                  |                                  |
                  v                                  v
- normalized Strava / Garmin activity      OpenAI Structured Output
+ normalized Strava / Garmin activity      Codex structured JSON
                  |                                  |
                  +---------------+------------------+
                                  |
@@ -243,13 +259,12 @@ Strava OAuth and scheduled sync          Free-text workout diary
 Strava payloads are reduced to decision-relevant actual workout fields before they enter planner context.
 Exact strength volume is never inferred from a generic Strava strength session.
 
-Garmin Connect CSV imports are idempotently fingerprinted in `imported_activity` and materialized as
-completed `workout_entry` records with `garmin_csv` provenance. The import preserves decision-relevant
-watch measurements without requiring a live provider connection.
+Garmin Connect CSV imports are idempotently fingerprinted in `imported_activity` and materialized as completed `workout_entry` records with `garmin_csv` provenance.
+The import preserves decision-relevant watch measurements without requiring a live provider connection.
 
-The profile's optional `current_target_goal` is flexible free text. Planner and coaching contexts pair
-it with calculated 180-day running evidence, while preserving the broader hybrid-training goal and hard
-constraints. Race-time and readiness comparisons remain explicitly labelled estimates.
+The profile's optional `current_target_goal` is flexible free text.
+Planner and coaching contexts pair it with calculated 180-day running evidence, while preserving the broader hybrid-training goal and hard constraints.
+Race-time and readiness comparisons remain explicitly labelled estimates.
 
 `daily_workout_log` preserves the user's source text, validated extraction, and the prior state of entries it controls.
 The external AI call and validation finish before the transaction begins.
@@ -263,11 +278,15 @@ State-changing browser requests also require a per-session CSRF token.
 Password changes require the current password and an authenticated browser session, retain only that session, and use the existing recommended password hasher.
 Logout deletes the current server-side session, clears the cookie, and clears browser-held CSRF and cached application data.
 The extension uses revocable random bearer tokens whose hashes are stored in PostgreSQL.
-The OpenAI key exists only in backend configuration.
+Codex uses the same local user's cached ChatGPT authentication.
+The shared provider verifies subscription authentication before sending context and clears API-key environment overrides.
+API keys are not accepted for AI features.
 Strava client credentials exist only in backend configuration.
 Strava access and refresh tokens are encrypted before persistence with a key derived from the session secret.
-Provider-side response storage is disabled for planning, food extraction, and Q&A calls.
-Provider-side response storage is also disabled for workout extraction.
+Every request uses a fresh ephemeral Codex thread, disabled transcript history, disabled telemetry exporters, and temporary runtime logs.
+These local controls do not establish remote zero retention; ChatGPT account/workspace data policies apply.
+Personal MCP servers, plugins, hooks, web search, memories, command tools, and host skill discovery are disabled.
+The agent runs in a temporary directory with a read-only sandbox and receives only the application's prompt and context.
 Food extraction sends only the diary text, today's nutrition suggestions, and the food catalog rather than the full health profile.
 
 ## Jobs

@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import PlanModification, PlanningRun, WorkoutEntry
-from app.services.planner.openai_planner import OpenAIPlanner, PlannerProviderError
+from app.services.ai import AIProviderError
+from app.services.planner.codex_planner import CodexPlanner
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.workout_regeneration import (
     REGENERATION_VERSION,
@@ -120,7 +121,7 @@ def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
     ai_settings = Settings(
         DATABASE_URL=settings.database_url,
         APP_ENV="test",
-        OPENAI_API_KEY="test-key",
+        AI_ENABLED=True,
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
@@ -128,11 +129,9 @@ def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
 
     def fail(self, context, correction=None, *, prompt_label=None):
         calls.append(correction)
-        raise PlannerProviderError(
-            "OpenAI request failed after automatic retries · HTTP 520 · transient provider error"
-        )
+        raise AIProviderError("Codex is unavailable. Please retry.")
 
-    monkeypatch.setattr(OpenAIPlanner, "generate", fail)
+    monkeypatch.setattr(CodexPlanner, "generate", fail)
 
     regenerate_workout(db, ai_settings, plan)
 
@@ -144,12 +143,9 @@ def test_provider_failure_falls_back_without_a_bogus_correction_attempt(
     assert run.validation_result_json["attempts"] == [
         {
             "attempt": 1,
-            "source": "openai",
+            "source": "codex",
             "stage": "provider",
-            "errors": [
-                "OpenAI request failed after automatic retries · HTTP 520 · "
-                "transient provider error"
-            ],
+            "errors": ["Codex is unavailable. Please retry."],
         }
     ]
 

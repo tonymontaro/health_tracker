@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from typing import Any
 from uuid import uuid4
 
-from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -24,6 +23,7 @@ from app.db.models import (
 )
 from app.schemas.meal_plan import MealNutritionSelection, MealPlanProposal, MealPlanSelection
 from app.schemas.plan import FruitProposal, NutritionPlanProposal, SnackProposal
+from app.services.ai import AIProviderError, CodexProvider
 from app.services.planner.context import build_horizon_planner_context, build_profile_snapshot
 from app.services.planner.fallback import _meal
 from app.services.planner.meal_selection import (
@@ -186,25 +186,18 @@ def _generate_missing_pair(
     proposal = None
     source = "fallback"
     validation: dict[str, Any] = {"version": MEAL_PLANNER_VERSION, "attempts": []}
-    if use_ai and settings.openai_key_value:
-        client = OpenAI(api_key=settings.openai_key_value, timeout=120)
+    if use_ai and settings.ai_enabled:
+        client = CodexProvider(settings)
         correction: list[str] = []
         for _ in range(2):
             try:
-                response = client.responses.parse(
-                    model=settings.openai_planner_model,
-                    reasoning={"effort": settings.openai_reasoning_effort},
-                    input=[
-                        {"role": "system", "content": MEAL_PROMPT},
-                        {
-                            "role": "user",
-                            "content": json.dumps({**context, "correction": correction}),
-                        },
-                    ],
-                    text_format=MealPlanProposal,
-                    store=False,
+                candidate = client.generate(
+                    model=settings.codex_planner_model,
+                    effort=settings.codex_reasoning_effort,
+                    instructions=MEAL_PROMPT,
+                    prompt=json.dumps({**context, "correction": correction}),
+                    response_model=MealPlanProposal,
                 )
-                candidate = response.output_parsed
                 correction = (
                     _selection_errors(db, profile, candidate, start, previous_names, fixed_days)
                     if candidate
@@ -212,8 +205,12 @@ def _generate_missing_pair(
                 )
                 validation["attempts"].append({"errors": correction})
                 if candidate and not correction:
-                    proposal, source = candidate, "openai"
+                    proposal, source = candidate, "codex"
                     break
+            except AIProviderError as exc:
+                validation["attempts"].append({"errors": [str(exc)], "stage": "provider"})
+                validation["codex_error"] = str(exc)
+                break
             except Exception as exc:  # noqa: BLE001 - bounded provider fallback.
                 # Do not persist provider bodies or request content in exception messages.
                 correction = [f"Meal generation failed: {type(exc).__name__}"]

@@ -22,6 +22,11 @@ from app.schemas.plan import (
     NutritionPlanProposal,
     proposal_from_document,
 )
+from app.services.ai import AIProviderError
+from app.services.planner.codex_planner import (
+    PLANNER_VERSION,
+    CodexPlanner,
+)
 from app.services.planner.context import build_nutrition_regeneration_context
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
@@ -31,11 +36,6 @@ from app.services.planner.meal_selection import (
     is_easy_meal,
     is_special_meal,
     special_meal_required_today,
-)
-from app.services.planner.openai_planner import (
-    PLANNER_VERSION,
-    OpenAIPlanner,
-    PlannerProviderError,
 )
 
 REGENERATION_VERSION = f"{PLANNER_VERSION}-nutrition-regeneration-v1"
@@ -120,9 +120,9 @@ def regenerate_nutrition(
 
     run = PlanningRun(
         plan_date=plan.plan_date,
-        model=settings.openai_planner_model if source == "openai" else "deterministic-fallback",
+        model=settings.codex_planner_model if source == "codex" else "deterministic-fallback",
         planner_version=REGENERATION_VERSION,
-        status="succeeded" if source == "openai" else "fallback",
+        status="succeeded" if source == "codex" else "fallback",
         context_snapshot_json=context,
         model_output_json=candidate.model_dump(mode="json"),
         validation_result_json=validation,
@@ -144,10 +144,10 @@ def _generate_candidate(
     forbidden_names: set[str],
     *,
     use_ai: bool,
-) -> tuple[DailyPlanProposal, Literal["openai", "fallback"], dict[str, Any]]:
+) -> tuple[DailyPlanProposal, Literal["codex", "fallback"], dict[str, Any]]:
     validation: dict[str, Any] = {"attempts": []}
-    if use_ai and settings.openai_key_value:
-        planner = OpenAIPlanner(settings)
+    if use_ai and settings.ai_enabled:
+        planner = CodexPlanner(settings)
         correction: dict[str, Any] | None = None
         for attempt in (1, 2):
             try:
@@ -157,21 +157,19 @@ def _generate_candidate(
                     prompt_label=f"FOOD RECOMMENDATION REGENERATION · ATTEMPT {attempt}",
                 )
                 errors = _candidate_errors(db, candidate, current, profile, forbidden_names)
-            except PlannerProviderError as exc:
+            except AIProviderError as exc:
                 errors = [str(exc)]
                 validation["attempts"].append(
-                    {"attempt": attempt, "source": "openai", "stage": "provider", "errors": errors}
+                    {"attempt": attempt, "source": "codex", "stage": "provider", "errors": errors}
                 )
-                validation["openai_error"] = str(exc)
+                validation["codex_error"] = str(exc)
                 break
             except Exception as exc:  # noqa: BLE001 - bounded provider fallback boundary.
                 errors = [f"{type(exc).__name__}: {str(exc)[:1500]}"]
                 candidate = None
-            validation["attempts"].append(
-                {"attempt": attempt, "source": "openai", "errors": errors}
-            )
+            validation["attempts"].append({"attempt": attempt, "source": "codex", "errors": errors})
             if candidate is not None and not errors:
-                return candidate, "openai", validation
+                return candidate, "codex", validation
             correction = {
                 "instruction": context["nutrition_regeneration"]["instruction"],
                 "required_main_meal_count": current.nutrition.expected_main_meals,
@@ -241,7 +239,7 @@ def _candidate_errors(
             if nicer.effort_score <= easy.effort_score:
                 errors.append("Meal 2 must be the more special, higher-effort option.")
     try:
-        merged = _merge_candidate(current, candidate, "openai")
+        merged = _merge_candidate(current, candidate, "codex")
     except ValueError as exc:
         errors.append(str(exc))
     else:
@@ -405,7 +403,7 @@ def _proposal_from_template(template: MealTemplate, suggested_window: str) -> Me
 def _merge_candidate(
     current: DailyPlanDocument,
     candidate: DailyPlanProposal,
-    source: Literal["openai", "fallback"],
+    source: Literal["codex", "fallback"],
 ) -> DailyPlanDocument:
     current_meals = _main_meals(current)
     candidate_meals = [candidate.nutrition.meal_1]
@@ -444,7 +442,7 @@ def _update_main_meals(
     plan: DailyPlan,
     current: DailyPlanDocument,
     merged: DailyPlanDocument,
-    source: Literal["openai", "fallback"],
+    source: Literal["codex", "fallback"],
 ) -> None:
     entries = {
         entry.planned_recommendation_id: entry

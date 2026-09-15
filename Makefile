@@ -1,4 +1,4 @@
-.PHONY: setup db-up db-down migrate seed api web extension scheduler scheduler-check scheduler-start scheduler-stop test lint typecheck build verify
+.PHONY: setup db-up db-down migrate seed api web extension scheduler scheduler-check scheduler-start scheduler-stop test lint typecheck build verify codex-login codex-check codex-smoke
 
 SCHEDULER_PID_FILE := .runtime/scheduler.pid
 SCHEDULER_LOG_FILE := .runtime/scheduler.log
@@ -26,6 +26,16 @@ web:
 
 extension:
 	npm run dev --workspace extension
+
+codex-login:
+	HEALTH_CODEX_ACTION=login .venv/bin/python scripts/codex_cli.py
+
+codex-check:
+	.venv/bin/python scripts/codex_cli.py
+
+codex-smoke:
+	.venv/bin/python scripts/codex_food_log_smoke.py
+	.venv/bin/python scripts/codex_smoke.py
 
 scheduler:
 	.venv/bin/health-autopilot scheduler

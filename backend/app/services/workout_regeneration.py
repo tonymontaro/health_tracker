@@ -20,6 +20,11 @@ from app.schemas.plan import (
     canonicalize_proposal,
     proposal_from_document,
 )
+from app.services.ai import AIProviderError
+from app.services.planner.codex_planner import (
+    PLANNER_VERSION,
+    CodexPlanner,
+)
 from app.services.planner.context import (
     build_profile_snapshot,
     build_workout_regeneration_context,
@@ -27,11 +32,6 @@ from app.services.planner.context import (
 )
 from app.services.planner.domain import validate_plan
 from app.services.planner.fallback import build_fallback_plan
-from app.services.planner.openai_planner import (
-    PLANNER_VERSION,
-    OpenAIPlanner,
-    PlannerProviderError,
-)
 
 REGENERATION_VERSION = f"{PLANNER_VERSION}-workout-regeneration-v2"
 
@@ -124,11 +124,9 @@ def regenerate_workout(
     db.add(
         PlanningRun(
             plan_date=plan.plan_date,
-            model=(
-                settings.openai_planner_model if source == "openai" else "deterministic-fallback"
-            ),
+            model=(settings.codex_planner_model if source == "codex" else "deterministic-fallback"),
             planner_version=REGENERATION_VERSION,
-            status="succeeded" if source == "openai" else "fallback",
+            status="succeeded" if source == "codex" else "fallback",
             context_snapshot_json=context,
             model_output_json=candidate.model_dump(mode="json"),
             validation_result_json=validation,
@@ -151,10 +149,10 @@ def _generate_candidate(
     context: dict[str, Any],
     *,
     use_ai: bool,
-) -> tuple[DailyPlanProposal, Literal["openai", "fallback"], dict[str, Any]]:
+) -> tuple[DailyPlanProposal, Literal["codex", "fallback"], dict[str, Any]]:
     validation: dict[str, Any] = {"attempts": []}
-    if use_ai and settings.openai_key_value:
-        planner = OpenAIPlanner(settings)
+    if use_ai and settings.ai_enabled:
+        planner = CodexPlanner(settings)
         correction: dict[str, Any] | None = None
         for attempt in (1, 2):
             try:
@@ -164,23 +162,21 @@ def _generate_candidate(
                     prompt_label=f"EXERCISE RECOMMENDATION REGENERATION · ATTEMPT {attempt}",
                 )
                 errors = _candidate_errors(
-                    db, candidate, current, profile, refreshed_snapshot, "openai"
+                    db, candidate, current, profile, refreshed_snapshot, "codex"
                 )
-            except PlannerProviderError as exc:
+            except AIProviderError as exc:
                 errors = [str(exc)]
                 validation["attempts"].append(
-                    {"attempt": attempt, "source": "openai", "stage": "provider", "errors": errors}
+                    {"attempt": attempt, "source": "codex", "stage": "provider", "errors": errors}
                 )
-                validation["openai_error"] = str(exc)
+                validation["codex_error"] = str(exc)
                 break
             except Exception as exc:  # noqa: BLE001 - bounded provider fallback boundary.
                 errors = [f"{type(exc).__name__}: {str(exc)[:1500]}"]
                 candidate = None
-            validation["attempts"].append(
-                {"attempt": attempt, "source": "openai", "errors": errors}
-            )
+            validation["attempts"].append({"attempt": attempt, "source": "codex", "errors": errors})
             if candidate is not None and not errors:
-                return candidate, "openai", validation
+                return candidate, "codex", validation
             correction = {
                 "instruction": context["workout_regeneration"]["instruction"],
                 "errors": errors,
@@ -202,7 +198,7 @@ def _candidate_errors(
     current: DailyPlanDocument,
     profile: UserProfile,
     refreshed_snapshot: ProfileSnapshot,
-    source: Literal["openai", "fallback"],
+    source: Literal["codex", "fallback"],
 ) -> list[str]:
     try:
         document = canonicalize_proposal(
@@ -221,7 +217,7 @@ def _candidate_errors(
         current.plan_date,
         enforce_meal_selection_policy=False,
     )
-    if source == "openai" and profile.current_target_goal:
+    if source == "codex" and profile.current_target_goal:
         rationale_text = " ".join(
             [
                 candidate.rationale.summary,
@@ -273,7 +269,7 @@ def _replace_materialized_workout(
     plan: DailyPlan,
     current: DailyPlanDocument,
     merged: DailyPlanDocument,
-    source: Literal["openai", "fallback"],
+    source: Literal["codex", "fallback"],
 ) -> None:
     old_ids = {exercise.recommendation_id for exercise in current.workout.exercises}
     old_entries = list(

@@ -12,6 +12,11 @@ function commaList(value: string): string[] {
 function RuntimeDetails({ data, loading, error }: { data?: Record<string, string | boolean | number>; loading: boolean; error: Error | null }) {
   const dialog = useRef<HTMLDialogElement>(null);
   return <>
+    <h3>Codex</h3>
+    {loading && <p role="status">Checking Codex sign-in...</p>}
+    {error && <p className="error" role="alert">{error.message}</p>}
+    {data && <p>{String(data.codex_status ?? "Codex status unavailable")}</p>}
+    <p>AI features use your ChatGPT subscription and share its usage limits.</p>
     <button className="quiet" type="button" onClick={() => dialog.current?.showModal()}>Runtime details</button>
     <dialog className="detail-sheet" ref={dialog} aria-labelledby="runtime-details-title">
       <form method="dialog"><button className="sheet-close">Close ×</button></form>
