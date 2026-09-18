@@ -1,6 +1,7 @@
 import base64
 import hmac
 import logging
+import math
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from typing import Any, Protocol
@@ -24,6 +25,13 @@ from app.db.models import (
     WorkoutEntry,
 )
 from app.services.metrics import recalculate_derived_summary
+from app.services.strava_naming import (
+    MAX_NAME_LENGTH,
+    WRITE_SCOPE,
+    is_generic_activity_name,
+    planned_activity_entries,
+    recommended_activity_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +81,8 @@ class StravaProvider(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def get_activity(self, access_token: str, activity_id: int) -> dict[str, Any]: ...
+
+    def rename_activity(self, access_token: str, activity_id: int, name: str) -> str: ...
 
     def revoke(self, token: str) -> None: ...
 
@@ -152,6 +162,20 @@ class StravaClient:
         if not isinstance(payload, dict):
             raise StravaIntegrationError("Strava returned an invalid activity")
         return payload
+
+    def rename_activity(self, access_token: str, activity_id: int, name: str) -> str:
+        payload = self._json(
+            self._request(
+                "PUT",
+                f"{STRAVA_API_URL}/activities/{activity_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"name": name},
+                timeout=self.timeout,
+            )
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("name"), str):
+            raise StravaIntegrationError("Strava returned an invalid activity name")
+        return payload["name"]
 
     def revoke(self, token: str) -> None:
         response = self._request(
@@ -236,7 +260,7 @@ def create_authorization_url(db: Session, settings: Settings, account_id: UUID) 
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "approval_prompt": "force",
-            "scope": f"read,{REQUIRED_SCOPE}",
+            "scope": f"read,{REQUIRED_SCOPE},{WRITE_SCOPE}",
             "state": raw_state,
         }
     )
@@ -346,6 +370,7 @@ def sync_connection(
             payloads,
             current,
             update_last_synced=True,
+            provider=active_provider,
         )
     except Exception as exc:
         _record_sync_failure(db, connection.id, exc)
@@ -384,6 +409,7 @@ def sync_connection_for_date(
             payloads,
             current,
             update_last_synced=False,
+            provider=active_provider,
         )
     except Exception as exc:
         _record_sync_failure(db, connection.id, exc)
@@ -462,6 +488,7 @@ def sync_webhook_activity(
         recalculate_derived_summary(db, profile, max(summary_date, activity.activity_date))
     connection.last_error = None
     db.commit()
+    _auto_rename_activities(db, settings, connection, [activity.id], active_provider, current)
 
 
 def mark_connection_revoked(db: Session, settings: Settings, owner_id: int) -> None:
@@ -646,6 +673,7 @@ def _persist_activity_payloads(
     synced_at: datetime,
     *,
     update_last_synced: bool,
+    provider: StravaProvider,
 ) -> dict[str, int]:
     locked_connection = db.scalar(
         select(StravaConnection).where(StravaConnection.id == connection.id).with_for_update()
@@ -656,6 +684,8 @@ def _persist_activity_payloads(
     updated = 0
     matched = 0
     affected_dates: set[date] = set()
+    activity_ids: list[UUID] = []
+    today = synced_at.astimezone(ZoneInfo(settings.app_timezone)).date()
     for payload in payloads:
         activity, was_created = _upsert_activity(
             db, settings, locked_connection, payload, synced_at
@@ -664,6 +694,8 @@ def _persist_activity_payloads(
         created += int(was_created)
         updated += int(not was_created)
         affected_dates.add(activity.activity_date)
+        if activity.activity_date == today:
+            activity_ids.append(activity.id)
     profile = db.scalar(select(UserProfile))
     if profile and affected_dates:
         summary_date = synced_at.astimezone(ZoneInfo(settings.app_timezone)).date()
@@ -673,12 +705,195 @@ def _persist_activity_payloads(
     locked_connection.last_error = None
     locked_connection.status = "connected"
     db.commit()
+    _auto_rename_activities(db, settings, locked_connection, activity_ids, provider, synced_at)
     return {
         "fetched": len(payloads),
         "created": created,
         "updated": updated,
         "matched": matched,
     }
+
+
+def rename_imported_activity(
+    db: Session,
+    settings: Settings,
+    connection: StravaConnection,
+    activity_id: int,
+    name: str | None = None,
+    *,
+    provider: StravaProvider | None = None,
+    automatic: bool = False,
+    now: datetime | None = None,
+) -> StravaActivity:
+    if connection.status != "connected" or WRITE_SCOPE not in connection.scopes_json:
+        raise StravaIntegrationError("Reconnect Strava in Settings to allow activity renaming.")
+    if name is not None:
+        name = name.strip()
+        if not name or len(name) > MAX_NAME_LENGTH or any(ord(char) < 32 for char in name):
+            raise ValueError("Use an activity name of 1 to 300 characters without line breaks.")
+    active_provider = provider or StravaClient(settings)
+    current = now or datetime.now(UTC)
+    access_token = _valid_access_token(db, settings, connection, active_provider, current)
+    # Use the import lock so polling, webhooks and manual renames cannot race locally.
+    locked = db.scalar(
+        select(StravaConnection)
+        .where(StravaConnection.id == connection.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked is None:
+        raise StravaIntegrationError("The Strava connection no longer exists")
+    if locked.status != "connected" or WRITE_SCOPE not in locked.scopes_json:
+        raise StravaIntegrationError("Reconnect Strava in Settings to allow activity renaming.")
+    activity = db.scalar(
+        select(StravaActivity)
+        .where(
+            StravaActivity.connection_id == locked.id,
+            StravaActivity.strava_activity_id == activity_id,
+        )
+        .execution_options(populate_existing=True)
+    )
+    if activity is None:
+        raise LookupError("Imported Strava activity not found")
+    entries = planned_activity_entries(db, activity)
+    if automatic and (
+        activity.activity_date != current.astimezone(ZoneInfo(settings.app_timezone)).date()
+        or activity.name_update_json
+        or not entries
+        or not is_generic_activity_name(activity.name, activity.sport_type)
+    ):
+        db.commit()
+        return activity
+    if automatic:
+        # Re-read the remote title before writing, preserving names edited since the list fetch.
+        remote = active_provider.get_activity(access_token, activity_id)
+        remote_name = remote.get("name")
+        if not isinstance(remote_name, str):
+            raise StravaIntegrationError("Strava returned an invalid activity name")
+        try:
+            remote_start = _parse_datetime(str(remote["start_date"]))
+        except (KeyError, ValueError) as exc:
+            raise StravaIntegrationError("Strava returned an invalid activity date") from exc
+        if (
+            not is_generic_activity_name(remote_name, activity.sport_type)
+            or remote_start.astimezone(ZoneInfo(settings.app_timezone)).date()
+            != activity.activity_date
+            or str(remote.get("sport_type") or remote.get("type")) != activity.sport_type
+        ):
+            _store_activity_name(db, activity, remote_name)
+            db.commit()
+            return activity
+    requested_name = name if name is not None else recommended_activity_name(activity, entries)
+    previous_name = activity.name
+    if not automatic or requested_name != activity.name:
+        requested_name = active_provider.rename_activity(access_token, activity_id, requested_name)
+    _store_activity_name(db, activity, requested_name)
+    activity.name_update_json = {
+        "mode": "automatic" if automatic else "manual",
+        "previous_name": previous_name,
+        "name": requested_name,
+        "updated_at": current.isoformat(),
+    }
+    db.commit()
+    return activity
+
+
+def _store_activity_name(db: Session, activity: StravaActivity, name: str) -> None:
+    activity.name = name[:MAX_NAME_LENGTH]
+    activity.raw_json = {**activity.raw_json, "name": activity.name}
+    for match in db.scalars(
+        select(StravaActivityMatch).where(StravaActivityMatch.activity_id == activity.id)
+    ):
+        entry = db.get(WorkoutEntry, match.workout_entry_id)
+        if entry is None:
+            continue
+        # Merge only the title, preserving corrections, measurements and diary ownership.
+        if entry.actual_json is not None:
+            entry.actual_json = {**entry.actual_json, "activity_name": activity.name}
+        if match.previous_entry_json.get("generated"):
+            entry.exercise_name = activity.name[:160]
+
+
+def set_treadmill_incline(
+    db: Session,
+    settings: Settings,
+    connection: StravaConnection,
+    activity_id: int,
+    incline_percent: float | None,
+) -> StravaActivity:
+    if incline_percent is not None and (
+        not math.isfinite(incline_percent) or not 0 <= incline_percent <= 40
+    ):
+        raise ValueError("Treadmill incline must be between 0% and 40%.")
+    locked = db.scalar(
+        select(StravaConnection).where(StravaConnection.id == connection.id).with_for_update()
+    )
+    if locked is None:
+        raise LookupError("The Strava connection no longer exists")
+    activity = db.scalar(
+        select(StravaActivity)
+        .where(
+            StravaActivity.connection_id == locked.id,
+            StravaActivity.strava_activity_id == activity_id,
+        )
+        .execution_options(populate_existing=True)
+    )
+    if activity is None:
+        raise LookupError("Imported Strava activity not found")
+    if activity.sport_type not in RUN_TYPES:
+        raise ValueError("Treadmill incline is only available for Strava runs.")
+    activity.treadmill_incline_percent = incline_percent
+    for entry in db.scalars(
+        select(WorkoutEntry)
+        .join(StravaActivityMatch, StravaActivityMatch.workout_entry_id == WorkoutEntry.id)
+        .where(StravaActivityMatch.activity_id == activity.id)
+    ):
+        actual = dict(entry.actual_json or {})
+        actual.pop("incline_percent", None)
+        actual.pop("incline_source", None)
+        if incline_percent is not None:
+            actual.update(incline_percent=incline_percent, incline_source="manual")
+        entry.actual_json = actual
+    profile = db.scalar(select(UserProfile))
+    if profile:
+        recalculate_derived_summary(
+            db, profile, datetime.now(ZoneInfo(settings.app_timezone)).date()
+        )
+    db.commit()
+    return activity
+
+
+def _auto_rename_activities(
+    db: Session,
+    settings: Settings,
+    connection: StravaConnection,
+    activity_ids: list[UUID],
+    provider: StravaProvider,
+    now: datetime,
+) -> None:
+    if WRITE_SCOPE not in connection.scopes_json:
+        return
+    today = now.astimezone(ZoneInfo(settings.app_timezone)).date()
+    for local_id in activity_ids:
+        activity = db.get(StravaActivity, local_id)
+        if activity is None or activity.activity_date != today:
+            continue
+        try:
+            rename_imported_activity(
+                db,
+                settings,
+                connection,
+                activity.strava_activity_id,
+                provider=provider,
+                automatic=True,
+                now=now,
+            )
+        except StravaIntegrationError:
+            # Import is already committed. A provider failure must not discard the workout.
+            db.rollback()
+            connection.last_error = "Activities imported, but Strava renaming failed. Retry sync or reconnect in Settings."
+            db.commit()
+            logger.warning("Automatic Strava rename failed for activity %s", local_id)
 
 
 def _record_sync_failure(db: Session, connection_id: UUID, exc: Exception) -> None:
@@ -884,6 +1099,9 @@ def _actual_payload(activity: StravaActivity) -> dict[str, Any]:
             "synced_at": activity.last_synced_at.isoformat(),
         },
     }
+    if activity.treadmill_incline_percent is not None:
+        payload["incline_percent"] = activity.treadmill_incline_percent
+        payload["incline_source"] = "manual"
     if activity.distance_m > 0:
         distance_km = round(activity.distance_m / 1000, 3)
         payload["distance_km"] = distance_km

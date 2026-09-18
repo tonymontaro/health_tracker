@@ -4,6 +4,7 @@ import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { EntryStatus, Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
+import { StravaInclineControl } from "../components/exercise/StravaInclineControl";
 import { MealFigure } from "../components/food/MealFigure";
 import { StatusPill } from "../components/StatusPill";
 import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl";
@@ -236,6 +237,7 @@ function actualWorkoutText(actual?: Record<string, unknown> | null): string {
   const parts: string[] = [];
   if (typeof actual.distance_km === "number") parts.push(`${actual.distance_km.toFixed(2)} km`);
   if (typeof actual.duration_seconds === "number") parts.push(`${Math.round(actual.duration_seconds / 60)} min`);
+  if (typeof actual.incline_percent === "number") parts.push(`${actual.incline_percent}% incline`);
   if (typeof actual.load_kg === "number") parts.push(`${actual.load_kg} kg`);
   if (Array.isArray(actual.reps_per_set)) parts.push(`${actual.reps_per_set.join(" / ")} reps`);
   if (typeof actual.average_power_watts === "number") parts.push(`${Math.round(actual.average_power_watts)} W avg`);
@@ -629,6 +631,7 @@ function WorkoutCard({
             <div className="exercise-heading"><div><strong>{exercise.exercise_name}</strong> <StatusPill status={status} /></div><span className="difficulty">Planned effort {exercise.expected_difficulty}/10</span></div>
             <p className="prescription">{exerciseText(exercise)}</p><p>{exercise.instructions}</p>
             {isRecording && recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
+            {isRecording && recorded?.strava_activity?.can_edit_incline && <StravaInclineControl activityId={recorded.strava_activity.activity_id} incline={recorded.strava_activity.treadmill_incline_percent} key={`${recorded.strava_activity.activity_id}:incline`} />}
             {isRecording && hasEvaluation && <div className="meta recorded-evaluation">{recorded.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {recorded.difficulty_1_to_10}/10</span>}{recorded.pain_flag && <span>Pain recorded</span>}</div>}
             {isRecording && recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
             {isRecording && <div className="actual-grid">
@@ -825,7 +828,9 @@ function StravaActivityDifficulty({ entry, date }: { entry: EntryStatus; date: s
   });
   return <div className="recorded-activity recorded-activity-difficulty">
     <div><strong>{entry.exercise_name}</strong><StatusPill status={entry.status} /></div>
+    {typeof entry.actual?.activity_name === "string" && entry.actual.activity_name !== entry.exercise_name && <small>Strava name: {entry.actual.activity_name}</small>}
     <small>{actualWorkoutText(entry.actual)}</small>
+    {entry.strava_activity?.can_edit_incline && <StravaInclineControl activityId={entry.strava_activity.activity_id} incline={entry.strava_activity.treadmill_incline_percent} key={`${entry.strava_activity.activity_id}:incline`} />}
     <div className="exercise-checkin">
       <WorkoutDifficultyControl
         inputId={`strava-difficulty-${entry.id}`}
@@ -867,7 +872,7 @@ function RecordSheet({
   useEffect(() => () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
   }, []);
-  const stravaActivities = today.actual_workouts.filter((entry) => entry.source === "strava");
+  const stravaActivities = today.actual_workouts.filter((entry) => entry.source === "strava" || entry.strava_activity);
   function finishClose() {
     if (dialog.current?.open) dialog.current.close();
     else onClose();

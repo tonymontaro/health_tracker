@@ -331,7 +331,8 @@ def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(
         _env_file=None,
     )
     current = local_today(api_settings)
-    target = current - timedelta(days=1)
+    # Use a prior training day: yesterday can be Thursday's valid rest plan.
+    target = current - timedelta(days=current.weekday() or 7)
     generate_daily_plan(db, api_settings, target, use_ai=False)
     recommendation = db.scalar(
         select(WorkoutEntry).where(

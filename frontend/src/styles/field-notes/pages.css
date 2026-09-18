@@ -211,6 +211,11 @@
 .history-detail { display: grid; gap: 1rem; }
 .history-entry { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .history-entry > div:first-child { display: grid; gap: 0.35rem; }
+.strava-rename, .strava-incline { border-top: 1px solid var(--line-light); margin-top: 0.5rem; }
+.strava-rename > summary, .strava-custom-name > summary, .strava-incline > summary { font-size: 0.85rem; }
+.strava-name-suggestion { overflow-wrap: anywhere; font-size: 0.85rem; }
+.strava-custom-name form, .strava-incline form { display: grid; gap: 0.75rem; padding-bottom: 0.75rem; }
+.strava-custom-name form button, .strava-incline form button { justify-self: start; }
 .history-difficulty-editor { display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: end; gap: 1rem; margin-top: 0.5rem; }
 .strava-link { display: flex; align-items: center; width: fit-content; min-height: 44px; color: var(--red-dark); font: 700 var(--fn-type-label) var(--sans); text-decoration: underline; text-underline-offset: 3px; text-transform: uppercase; }
 .correction-sheet form { display: grid; gap: 1.2rem; }

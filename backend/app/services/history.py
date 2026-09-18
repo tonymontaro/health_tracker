@@ -13,6 +13,8 @@ from app.db.models import (
     NutritionEntry,
     PlanModification,
     ProfileSnapshot,
+    StravaActivity,
+    StravaActivityMatch,
     UserProfile,
     WorkoutEntry,
 )
@@ -20,6 +22,7 @@ from app.schemas.plan import DailyPlanDocument, proposal_from_document
 from app.services.food_log import serialize_food_log
 from app.services.metrics import recalculate_derived_summary
 from app.services.planner.domain import validate_plan
+from app.services.strava_naming import history_activity_names
 from app.services.workout_log import serialize_workout_log
 
 
@@ -157,6 +160,21 @@ def correct_workout_entry(
     requested_actual = changes.get("actual")
     if requested_status == "completed" and not (requested_actual or entry.actual_json):
         raise ValueError("A completed workout requires actual performance evidence")
+    if requested_actual is not None:
+        activity = db.scalar(
+            select(StravaActivity)
+            .join(StravaActivityMatch, StravaActivityMatch.activity_id == StravaActivity.id)
+            .where(StravaActivityMatch.workout_entry_id == entry.id)
+        )
+        if activity and activity.treadmill_incline_percent is not None:
+            changes = {
+                **changes,
+                "actual": {
+                    **requested_actual,
+                    "incline_percent": activity.treadmill_incline_percent,
+                    "incline_source": "manual",
+                },
+            }
     for field, model_field in (
         ("actual", "actual_json"),
         ("difficulty_1_to_10", "difficulty_1_to_10"),
@@ -210,12 +228,16 @@ def history_day(db: Session, target_date: date) -> dict[str, Any]:
         )
     )
     snapshot = db.get(ProfileSnapshot, plan.profile_snapshot_id) if plan else None
+    activity_names = history_activity_names(db, workouts)
     return {
         "date": target_date.isoformat(),
         "original_plan": plan.original_plan_json if plan else None,
         "current_plan": plan.current_plan_json if plan else None,
         "nutrition": [serialize_nutrition(item) for item in nutrition],
-        "workouts": [serialize_workout(item) for item in workouts],
+        "workouts": [
+            {**serialize_workout(item), "strava_activity": activity_names.get(item.id)}
+            for item in workouts
+        ],
         "profile_snapshot": (
             {
                 "short_summary": snapshot.short_summary,

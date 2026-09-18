@@ -15,6 +15,14 @@ export type EntryStatus = {
   meal_slot?: string;
   food_log_id?: string | null;
   workout_log_id?: string | null;
+  strava_activity?: {
+    activity_id: number;
+    name: string;
+    recommended_name: string;
+    can_rename: boolean;
+    can_edit_incline: boolean;
+    treadmill_incline_percent: number | null;
+  } | null;
 };
 
 export type FoodComponent = {

@@ -380,6 +380,8 @@ class StravaActivity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     activity_date: Mapped[date] = mapped_column(Date, index=True)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     name: Mapped[str] = mapped_column(String(300))
+    name_update_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    treadmill_incline_percent: Mapped[float | None] = mapped_column(Float)
     sport_type: Mapped[str] = mapped_column(String(80))
     activity_type: Mapped[str] = mapped_column(String(80))
     distance_m: Mapped[float] = mapped_column(Float, default=0)

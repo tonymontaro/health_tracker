@@ -221,6 +221,10 @@ Each scheduled message uses both database idempotency and a stable Resend idempo
 
 ## Jobs and scheduler
 
+The nightly feedback email is due at 23:55 (11:55 pm) in `APP_TIMEZONE`, which defaults to `Europe/Zurich`.
+The scheduler checks for due jobs every minute.
+Restart a running scheduler after changing its schedule so it loads the new times.
+
 Generate a plan manually:
 
 ```bash
@@ -400,7 +404,9 @@ Configure `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`, restart the backend, th
 Do not configure the access and refresh tokens displayed in Strava's application settings.
 Those tokens represent an existing athlete grant and may not include activity access; the application obtains and securely stores the correct short-lived token pair through OAuth consent.
 The OAuth callback is `/api/v1/integrations/strava/callback`.
-The integration requests read-only access to all athlete activities, including activities whose visibility is Only You.
+The integration requests access to read all athlete activities, including Only You activities, and to rename activities on Strava.
+Existing connections continue importing without write access; use **Enable Strava renaming** in Settings and grant the additional permission.
+After upgrading, run `make migrate` and restart the API and scheduler to load the Strava naming and treadmill incline support.
 
 The first sync imports the configured recent history window, which defaults to 90 days because recommendation context uses the latest 28 days.
 Later syncs re-read a 35-day lookback window so delayed uploads and edited activities are updated idempotently.
@@ -415,6 +421,19 @@ A Strava strength session can complete the day's unresolved strength recommendat
 An activity that does not match the plan becomes a separate completed workout and is still included in future recommendation context.
 Imported values preserve distance, duration, elevation, heart rate, power, device, and activity provenance when Strava supplies them.
 Raw Strava location data is never included in AI planning context.
+
+Imports automatically rename generic activity titles only when the activity matches a saved recommendation and its start date is today in `APP_TIMEZONE`.
+Older activities and custom titles are preserved, and a successful automatic or manual rename is not automatically reapplied.
+Scheduled, selected-day, and webhook imports use the same behavior.
+Rename failures preserve the completed import, appear in Settings, and can retry on a later same-day sync.
+
+Exercise History includes a collapsed **Rename on Strava** control for each imported activity, including historical records.
+Apply the suggested name directly or expand **Use a custom name** for an input prefilled with the suggestion.
+Today recording and History also offer a collapsed treadmill incline editor for Strava runs, with values from 0% to 40% and a blank value to clear the measurement.
+The actual incline is recorded locally, survives later Strava syncs, and takes precedence over the saved recommendation when suggesting a name, such as `Treadmill hill intervals - 4% incline`.
+Names omit the word `planned`; an unrecorded incline can still come from the recommendation, without being stored as actual performance.
+Saving incline updates the suggested name; use the rename control to apply it to an already-named Strava activity.
+Editing incline does not require Strava write permission and does not change Strava's elevation-gain statistics.
 
 OAuth access and refresh tokens are encrypted in PostgreSQL with a key derived from `SESSION_SECRET`.
 Changing `SESSION_SECRET` requires reconnecting Strava.

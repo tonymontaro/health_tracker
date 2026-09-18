@@ -6,13 +6,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, require_auth, require_write_auth
 from app.core.config import Settings, get_settings
-from app.db.models import StravaConnection
+from app.db.models import StravaActivity, StravaConnection
 from app.db.session import SessionLocal, get_db
 from app.services.recording_dates import resolve_recording_date
 from app.services.strava import (
@@ -21,11 +21,14 @@ from app.services.strava import (
     create_authorization_url,
     disconnect,
     mark_connection_revoked,
+    rename_imported_activity,
     serialize_connection,
+    set_treadmill_incline,
     sync_connection,
     sync_connection_for_date,
     sync_webhook_activity,
 )
+from app.services.strava_naming import WRITE_SCOPE
 from app.services.workout_feedback import ensure_workout_feedback
 
 router = APIRouter(prefix="/integrations/strava", tags=["integrations"])
@@ -42,6 +45,25 @@ class StravaWebhookEvent(BaseModel):
     subscription_id: int
     event_time: int
     updates: dict[str, Any] = Field(default_factory=dict)
+
+
+class StravaNameUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+
+    @field_validator("name")
+    @classmethod
+    def single_line(cls, value: str | None) -> str | None:
+        if value is not None and any(ord(char) < 32 for char in value):
+            raise ValueError("The activity name must be a single line")
+        return value
+
+
+class StravaInclineUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    incline_percent: float | None = Field(ge=0, le=40, allow_inf_nan=False)
 
 
 def _connection(db: Session, account_id: UUID) -> StravaConnection | None:
@@ -176,6 +198,67 @@ def disconnect_strava(
         disconnect(db, settings, connection)
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.put("/activities/{activity_id}/name")
+def rename_strava_activity(
+    activity_id: int,
+    payload: StravaNameUpdate,
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, str]:
+    connection = _connection(db, auth.account.id)
+    if (
+        connection is None
+        or db.scalar(
+            select(StravaActivity.id).where(
+                StravaActivity.connection_id == connection.id,
+                StravaActivity.strava_activity_id == activity_id,
+            )
+        )
+        is None
+    ):
+        raise HTTPException(status_code=404, detail="Imported Strava activity not found")
+    if connection.status != "connected" or WRITE_SCOPE not in connection.scopes_json:
+        raise HTTPException(
+            status_code=409, detail="Reconnect Strava in Settings to allow activity renaming."
+        )
+    try:
+        activity = rename_imported_activity(db, settings, connection, activity_id, payload.name)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StravaIntegrationError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail="Strava could not rename this activity. Try again or reconnect in Settings.",
+        ) from exc
+    return {"name": activity.name}
+
+
+@router.patch("/activities/{activity_id}/incline")
+def update_strava_treadmill_incline(
+    activity_id: int,
+    payload: StravaInclineUpdate,
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, float | None]:
+    connection = _connection(db, auth.account.id)
+    if connection is None:
+        raise HTTPException(status_code=404, detail="Imported Strava activity not found")
+    try:
+        activity = set_treadmill_incline(
+            db, settings, connection, activity_id, payload.incline_percent
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"incline_percent": activity.treadmill_incline_percent}
 
 
 @router.get("/webhook")

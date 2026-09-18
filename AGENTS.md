@@ -29,6 +29,8 @@ The frontend, extension, email jobs, and scheduler consume the same canonical da
 - The backend listens on `http://localhost:8001`; port 8000 belongs to another application on the owner's host.
 - The Vite frontend listens on `http://localhost:5173` and proxies `/api` and `/health` to port 8001.
 - Application dates are based on `Europe/Zurich`, not UTC or the agent's inferred locale.
+- The nightly feedback email is due at 23:55 in `APP_TIMEZONE` (default `Europe/Zurich`).
+  Restart a running scheduler after changing its schedule.
 - `.env` is private and may contain live OpenAI, Resend, Strava, session, and database secrets.
   Never print, quote, commit, or overwrite it.
   Use `.env.example` to understand the supported keys.
@@ -173,6 +175,10 @@ Check all of these relationships when changing ports or hostnames.
 - Shopping periods are fixed Monday-based fortnights anchored to the earliest saved meal week.
   Main meals, fruit, and snacks (including nuts) contribute to their shopping lists; optional meals are excluded.
 - Raw Strava location data must never enter AI context.
+- Automatic Strava renaming is limited to today's generic titles with saved recommendation matches.
+  Older activities require an explicit rename, and successful renames must not be automatically reapplied.
+  Actual treadmill incline is a separate local measurement that survives syncs and overrides prescribed incline in suggested titles.
+  Existing read-only connections keep importing; enabling renaming requires reconnecting with `activity:write`.
 - AI calls use the official `openai-codex` SDK with ChatGPT subscription authentication, never an API key.
   Keep models configurable through `CODEX_*` settings; legacy `OPENAI_*` model aliases remain accepted.
   Preserve the shared provider's ephemeral sessions, disabled personal tools/hooks, read-only sandbox, sanitized errors, and cleanup.

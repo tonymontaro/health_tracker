@@ -259,6 +259,19 @@ Strava OAuth and scheduled sync          Free-text workout diary
 Strava payloads are reduced to decision-relevant actual workout fields before they enter planner context.
 Exact strength volume is never inferred from a generic Strava strength session.
 
+Strava OAuth requests `activity:write` alongside `activity:read_all`; existing read-only grants continue importing and can be upgraded from Settings.
+After an import commits, activities on the current application-local date with a planned recommendation match and a generic title are eligible for automatic renaming.
+The rename path shares the connection lock with imports, rechecks the remote title, and records successful automatic or manual writes in `strava_activity.name_update_json` to prevent later automatic overwrites.
+Provider naming failures leave imported workouts committed and expose a retryable error in Settings.
+Historical renames require an explicit authenticated, CSRF-protected action from History.
+
+`strava_activity.treadmill_incline_percent` stores a user-entered actual incline independently of provider payloads and saved prescriptions.
+Its edit endpoint accepts only imported runs and merges the value into matched workout actuals with manual measurement provenance, preserving other corrections, difficulty, pain, and notes.
+Subsequent imports retain this local measurement, while clearing it removes only the actual incline.
+Today recording and History expose the same optional editor, including for historical activities.
+Suggested titles prefer actual incline and fall back to prescribed incline, omit a planned qualifier, and never copy a prescribed incline into actual performance or Strava elevation gain.
+History and Today use the persisted activity matches to keep naming and incline controls available after a manual history correction.
+
 Garmin Connect CSV imports are idempotently fingerprinted in `imported_activity` and materialized as completed `workout_entry` records with `garmin_csv` provenance.
 The import preserves decision-relevant watch measurements without requiring a live provider connection.
 

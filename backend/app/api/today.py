@@ -67,6 +67,7 @@ from app.services.strava import (
     StravaIntegrationError,
     sync_connection_for_date,
 )
+from app.services.strava_naming import history_activity_names
 from app.services.workout_feedback import ensure_workout_feedback
 from app.services.workout_log import (
     WorkoutLogExtractionError,
@@ -106,9 +107,14 @@ def _status_maps(db: Session, target: date) -> tuple[dict[str, Any], dict[str, A
         for item in db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == target))
         if item.planned_recommendation_id is not None
     }
+    entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target)))
+    activity_names = history_activity_names(db, entries)
     workouts = {
-        item.planned_recommendation_id: serialize_workout(item)
-        for item in db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target))
+        item.planned_recommendation_id: {
+            **serialize_workout(item),
+            "strava_activity": activity_names.get(item.id),
+        }
+        for item in entries
         if item.planned_recommendation_id is not None
     }
     return nutrition, workouts
@@ -137,9 +143,8 @@ def _workout_log(db: Session, target: date) -> DailyWorkoutLog | None:
 
 
 def _actual_workouts(db: Session, target: date) -> list[dict[str, Any]]:
-    return [
-        serialize_workout(entry)
-        for entry in db.scalars(
+    entries = list(
+        db.scalars(
             select(WorkoutEntry)
             .where(
                 WorkoutEntry.entry_date == target,
@@ -147,6 +152,11 @@ def _actual_workouts(db: Session, target: date) -> list[dict[str, Any]]:
             )
             .order_by(WorkoutEntry.created_at)
         )
+    )
+    activity_names = history_activity_names(db, entries)
+    return [
+        {**serialize_workout(entry), "strava_activity": activity_names.get(entry.id)}
+        for entry in entries
     ]
 
 

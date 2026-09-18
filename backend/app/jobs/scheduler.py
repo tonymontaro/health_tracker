@@ -32,7 +32,7 @@ def run_due_jobs() -> list[str]:
         if local_now.hour >= 6:
             send_morning_email(db, settings, today)
             completed.append("morning_email")
-        if local_now.hour >= 21:
+        if local_now.hour == 23 and local_now.minute >= 55:
             send_evening_checkin(db, settings, today)
             completed.append("evening_email")
         if local_now.hour > 0 or local_now.minute >= 5:
