@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { EntryStatus, Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
 import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
 import { StravaInclineControl } from "../components/exercise/StravaInclineControl";
+import { StravaRenameControl } from "../components/exercise/StravaRenameControl";
 import { MealFigure } from "../components/food/MealFigure";
 import { StatusPill } from "../components/StatusPill";
 import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl";
@@ -632,6 +633,10 @@ function WorkoutCard({
             <p className="prescription">{exerciseText(exercise)}</p><p>{exercise.instructions}</p>
             {isRecording && recorded?.actual && <p className="recorded-actual"><strong>{recorded.source === "strava" ? "Recorded by Strava" : "Recorded actual"}:</strong> {actualWorkoutText(recorded.actual)}</p>}
             {isRecording && recorded?.strava_activity?.can_edit_incline && <StravaInclineControl activityId={recorded.strava_activity.activity_id} incline={recorded.strava_activity.treadmill_incline_percent} key={`${recorded.strava_activity.activity_id}:incline`} />}
+            {recorded?.strava_activity && <>
+              <small>Strava name: {recorded.strava_activity.name}</small>
+              <StravaRenameControl activity={recorded.strava_activity} key={`${recorded.strava_activity.activity_id}:${recorded.strava_activity.recommended_name}`} />
+            </>}
             {isRecording && hasEvaluation && <div className="meta recorded-evaluation">{recorded.difficulty_1_to_10 != null && <span>Self-evaluated difficulty {recorded.difficulty_1_to_10}/10</span>}{recorded.pain_flag && <span>Pain recorded</span>}</div>}
             {isRecording && recorded?.notes && <p className="recorded-notes"><strong>Notes:</strong> {recorded.notes}</p>}
             {isRecording && <div className="actual-grid">
@@ -810,6 +815,7 @@ const RECORD_SHEET_ANIMATION_MS = 300;
 
 function StravaActivityDifficulty({ entry, date }: { entry: EntryStatus; date: string }) {
   const queryClient = useQueryClient();
+  const difficultyId = useId();
   const [difficulty, setDifficulty] = useState(entry.difficulty_1_to_10 ?? 5);
   const update = useMutation({
     mutationFn: () => api(datedPath(`/today/workout/${entry.id}/difficulty`, date), {
@@ -831,9 +837,10 @@ function StravaActivityDifficulty({ entry, date }: { entry: EntryStatus; date: s
     {typeof entry.actual?.activity_name === "string" && entry.actual.activity_name !== entry.exercise_name && <small>Strava name: {entry.actual.activity_name}</small>}
     <small>{actualWorkoutText(entry.actual)}</small>
     {entry.strava_activity?.can_edit_incline && <StravaInclineControl activityId={entry.strava_activity.activity_id} incline={entry.strava_activity.treadmill_incline_percent} key={`${entry.strava_activity.activity_id}:incline`} />}
+    {entry.strava_activity && <StravaRenameControl activity={entry.strava_activity} key={`${entry.strava_activity.activity_id}:${entry.strava_activity.recommended_name}`} />}
     <div className="exercise-checkin">
       <WorkoutDifficultyControl
-        inputId={`strava-difficulty-${entry.id}`}
+        inputId={difficultyId}
         exerciseName={entry.exercise_name ?? "Strava activity"}
         label="How hard was it?"
         value={difficulty}
@@ -1008,6 +1015,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
   if (today.error || !today.data) return <div className="error-panel" role="alert"><h1>The selected day's plan is unavailable</h1><p>{today.error?.message}</p></div>;
   const data = today.data;
   const isFood = section === "food";
+  const stravaActivities = data.actual_workouts.filter((entry) => entry.source === "strava" || entry.strava_activity);
   const currentDate = data.recording_dates[0] ?? data.date;
   const isHistorical = data.date !== currentDate;
   const tabSearch = isHistorical ? `?date=${encodeURIComponent(data.date)}` : "";
@@ -1041,6 +1049,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             {data.nutrition.meal_2 && <MealCard meal={data.nutrition.meal_2} slot={data.nutrition.meal_2.expected ? "Second main meal" : "Optional meal / buy on the day"} index={2} today={data} />}
           </> : <>
             <WorkoutCard key={`structured-${data.date}`} today={data} onAskAlternative={isHistorical ? undefined : () => setAlternativeQuestion("Please propose a safe measurable alternative to today's workout.")} />
+            {stravaActivities.length > 0 && <section className="card"><p className="eyebrow">Strava activities</p>{stravaActivities.map((entry) => <StravaActivityDifficulty entry={entry} date={data.date} key={entry.id} />)}</section>}
           </>}
         </div>
         <aside className="side-column">

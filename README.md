@@ -427,7 +427,7 @@ Older activities and custom titles are preserved, and a successful automatic or 
 Scheduled, selected-day, and webhook imports use the same behavior.
 Rename failures preserve the completed import, appear in Settings, and can retry on a later same-day sync.
 
-Exercise History includes a collapsed **Rename on Strava** control for each imported activity, including historical records.
+The daily exercise page and Exercise History include a collapsed **Rename on Strava** control for each imported activity, including past daily pages and historical records.
 Apply the suggested name directly or expand **Use a custom name** for an input prefilled with the suggestion.
 Today recording and History also offer a collapsed treadmill incline editor for Strava runs, with values from 0% to 40% and a blank value to clear the measurement.
 The actual incline is recorded locally, survives later Strava syncs, and takes precedence over the saved recommendation when suggesting a name, such as `Treadmill hill intervals - 4% incline`.
