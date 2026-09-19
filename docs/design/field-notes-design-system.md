@@ -325,7 +325,7 @@ Purpose: separate major sections and expose a short section title and optional s
 
 ### 9.5 `StorySection`
 
-Purpose: frame a major item such as the workout, one meal, the next preparation action, or a historical insight.
+Purpose: frame a major item such as the workout, one meal, or a historical insight.
 
 - Accept title, label, summary, facts, action region, illustration region, and status region.
 - Support lead, standard, compact, and inverse variants.

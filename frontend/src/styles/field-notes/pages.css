@@ -117,8 +117,6 @@
 .emergency-plate-card h3 { font-size: 1.6rem; }
 .emergency-ingredients { display: grid; gap: 0.35rem; margin: 1rem 0; }
 .emergency-ingredients small { display: flex; gap: 0.5rem; }
-.action-card { padding: 1.5rem; border: 0; color: var(--paper-light); background: var(--red); }
-.action-card .eyebrow, .action-card p { color: #f7ddd3; }
 .exercise { padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
 .exercise-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem 1.5rem; }
 .exercise-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; }

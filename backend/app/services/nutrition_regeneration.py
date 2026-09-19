@@ -348,7 +348,6 @@ def _deterministic_candidate(
             "and the emergency plate remains optional."
         ),
     )
-    base.prep_actions = []
     base.rationale.nutrition_factors = [
         f"Regenerated main meals: {', '.join(template.name for template in selected)}",
         (
@@ -427,7 +426,7 @@ def _merge_candidate(
         if old.expected
     )
     payload["nutrition"]["guidance"] = candidate.nutrition.guidance
-    payload["prep_actions"] = [item.model_dump(mode="json") for item in candidate.prep_actions]
+    payload["prep_actions"] = []
     payload["rationale"]["nutrition_factors"] = candidate.rationale.nutrition_factors
     assumptions = list(payload["assumptions"])
     note = "Scheduled main meals were regenerated at the user's request."

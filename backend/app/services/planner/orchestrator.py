@@ -114,7 +114,6 @@ def generate_daily_plan(
                 continue
             if nutrition is not None:
                 candidate.nutrition = nutrition
-                candidate.prep_actions = []
             errors = validate_plan(
                 db, candidate, profile, plan_date, enforce_meal_selection_policy=nutrition is None
             )
@@ -144,7 +143,6 @@ def generate_daily_plan(
         proposal = build_fallback_plan(db, plan_date, horizon_day=current_horizon_day)
         if nutrition is not None:
             proposal.nutrition = nutrition
-            proposal.prep_actions = []
         fallback_errors = validate_plan(
             db, proposal, profile, plan_date, enforce_meal_selection_policy=nutrition is None
         )

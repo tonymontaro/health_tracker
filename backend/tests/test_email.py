@@ -87,6 +87,24 @@ def test_morning_email_includes_emergency_plate_in_both_formats() -> None:
     assert 'href="https://health.example.org/today/exercise"' in html
 
 
+def test_morning_email_omits_retired_preparation_actions_from_legacy_plans() -> None:
+    legacy_plan = {
+        **PLAN,
+        "prep_actions": [
+            {
+                "action": "Legacy preparation action",
+                "active_minutes": 5,
+                "when": "Evening",
+            }
+        ],
+    }
+    subject, text, html = morning_email(legacy_plan, "https://health.example.org")
+    assert subject == "Today - meals and training"
+    for body in [text, html]:
+        assert "next action" not in body.lower()
+        assert "Legacy preparation action" not in body
+
+
 def test_morning_email_contains_every_exercise_and_actionable_meal_details(
     db: Session, settings: Settings, seeded
 ) -> None:

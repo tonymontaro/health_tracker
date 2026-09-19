@@ -148,7 +148,7 @@ def sync_strava_today(
     connection = _connection(db, auth.account.id)
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
-    target_date = resolve_recording_date(settings, None)
+    target_date = resolve_recording_date(db, settings, None)
     try:
         return sync_connection_for_date(db, settings, connection, target_date)
     except StravaIntegrationError as exc:
@@ -166,7 +166,7 @@ def sync_strava_day(
     if connection is None:
         raise HTTPException(status_code=404, detail="Strava is not connected")
     try:
-        validated_date = resolve_recording_date(settings, target_date)
+        validated_date = resolve_recording_date(db, settings, target_date)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

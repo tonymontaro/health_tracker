@@ -153,6 +153,7 @@ Check all of these relationships when changing ports or hostnames.
 ## Data and domain invariants
 
 - There is one canonical plan per Zurich-local date.
+- Daily-page history permits any saved past plan date, with no fixed lookback limit; browsing past dates must not generate missing plans.
 - Meals use stable Monday-Sunday `weekly_meal_plan` records with at least fourteen days visible, including a complete final week.
 - Shopping quantities come from the displayed single-serving main recipes, fruit, and snacks, including nuts.
   Optional meals are excluded.

@@ -190,7 +190,7 @@ export type RecedingHorizonOutlook = {
 
 export type Today = {
   date: string;
-  recording_dates: string[];
+  current_date: string;
   source: "openai" | "codex" | "fallback";
   current_status: string;
   recovery_status: string;
@@ -221,7 +221,6 @@ export type Today = {
     expected_duration_minutes: number;
     summary: string;
   };
-  next_action: { action: string; active_minutes: number; when: string } | null;
   shopping: { action_needed: boolean; summary: string };
   nutrition_status: Record<string, EntryStatus>;
   workout_status: Record<string, EntryStatus>;

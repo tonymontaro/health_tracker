@@ -59,8 +59,8 @@ from app.services.planner.two_week import (
     serialize_committed_outlook,
 )
 from app.services.recording_dates import (
-    available_recording_dates,
     current_recording_date,
+    daily_plan_calendar,
     resolve_recording_date,
 )
 from app.services.strava import (
@@ -87,9 +87,9 @@ def local_today(settings: Settings) -> date:
     return current_recording_date(settings)
 
 
-def _recording_date(settings: Settings, requested: date | None) -> date:
+def _recording_date(db: Session, settings: Settings, requested: date | None) -> date:
     try:
-        return resolve_recording_date(settings, requested)
+        return resolve_recording_date(db, settings, requested)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -98,7 +98,13 @@ def _recording_date(settings: Settings, requested: date | None) -> date:
 
 
 def _plan(db: Session, settings: Settings, target: date | None = None) -> DailyPlan:
-    return generate_daily_plan(db, settings, _recording_date(settings, target))
+    selected = _recording_date(db, settings, target)
+    if selected < current_recording_date(settings):
+        saved = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == selected))
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Saved daily plan not found")
+        return saved
+    return generate_daily_plan(db, settings, selected)
 
 
 def _status_maps(db: Session, target: date) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -193,7 +199,7 @@ def get_today(
     horizon = latest_two_week_plan(db, plan.plan_date)
     return {
         "date": plan.plan_date.isoformat(),
-        "recording_dates": [item.isoformat() for item in available_recording_dates(settings)],
+        "current_date": current_recording_date(settings).isoformat(),
         "source": document["source"],
         "current_status": document["profile_snapshot"]["short_summary"],
         "recovery_status": document["profile_snapshot"]["recovery_status"],
@@ -212,7 +218,6 @@ def get_today(
         ),
         "nutrition": document["nutrition"],
         "workout": document["workout"],
-        "next_action": document["prep_actions"][0] if document["prep_actions"] else None,
         "shopping": document["shopping"],
         "nutrition_status": nutrition_status,
         "workout_status": workout_status,
@@ -223,6 +228,16 @@ def get_today(
         "emergency_plate": EMERGENCY_PLATE,
         "outlook": (serialize_committed_outlook(horizon) if horizon is not None else None),
     }
+
+
+@router.get("/calendar")
+def get_daily_plan_calendar(
+    month: date | None = Query(default=None),
+    _: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return daily_plan_calendar(db, settings, month)
 
 
 @router.post("/outlook/regenerate")
@@ -249,7 +264,7 @@ def get_or_create_workout_coach_feedback(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, str | None]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     feedback = ensure_workout_feedback(db, settings, target)
     return {"message": feedback.message if feedback else None}
 
@@ -309,7 +324,7 @@ def confirm_nutrition(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
     entry.status = "confirmed"
@@ -328,7 +343,7 @@ def skip_nutrition(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = _nutrition_entry(db, recommendation_id, target)
     entry.status = "skipped"
@@ -367,7 +382,7 @@ def manual_nutrition(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_food_log_exists(db, target)
     entry = NutritionEntry(
         entry_date=target,
@@ -411,7 +426,7 @@ def record_food_log(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> FoodLogResponse:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _plan(db, settings, target)
     try:
         return process_daily_food_log(db, settings, target, payload.text)
@@ -439,7 +454,7 @@ def complete_workout(
 ) -> list[dict[str, Any]]:
     if not payload.results:
         raise HTTPException(status_code=422, detail="Actual performance evidence is required")
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target)))
     changed: list[WorkoutEntry] = []
@@ -471,7 +486,7 @@ def patch_workout_difficulty(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     entry = db.get(WorkoutEntry, entry_id)
     if entry is None or entry.entry_date != target:
         raise HTTPException(status_code=404, detail="Workout entry not found")
@@ -498,7 +513,7 @@ def confirm_workout_recommendation(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entry = _workout_entry(db, recommendation_id, target)
     entry.actual_json = dict(entry.prescription_json)
@@ -522,7 +537,7 @@ def skip_workout_recommendation(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entry = _workout_entry(db, recommendation_id, target)
     entry.actual_json = None
@@ -545,7 +560,7 @@ def skip_workout(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _reject_if_workout_log_exists(db, target)
     entries = list(
         db.scalars(
@@ -608,7 +623,7 @@ def analyze_workout_log(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> WorkoutLogAnalysisResponse:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _plan(db, settings, target)
     try:
         return analyze_daily_workout_log(db, settings, target, payload.text)
@@ -634,7 +649,7 @@ def record_workout_log(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> WorkoutLogResponse:
-    target = _recording_date(settings, target_date)
+    target = _recording_date(db, settings, target_date)
     _plan(db, settings, target)
     try:
         return process_daily_workout_log(

@@ -19,11 +19,9 @@ button { min-height: 44px; border: 1px solid var(--ink); border-radius: 0; paddi
 button.primary { color: var(--paper); background: var(--ink); }
 .full { display: flex; justify-content: space-between; width: 100%; min-height: 44px; margin-top: 16px; padding: 12px; }
 .training { display: grid; gap: 6px; }
-.training > strong, .next > strong { margin-top: 7px; font-weight: 400; }
+.training > strong { margin-top: 7px; font-weight: 400; }
 .training p { margin: 5px 0 0; }
 .training p span { color: var(--muted); font-size: 12px; }
-.next { display: grid; gap: 6px; margin-top: 10px; padding: 15px; border: 0; color: var(--paper); background: var(--red); }
-.next small { color: #f6d9cf; }
 .warning, .error { color: #8f3525; font-size: 12px; }
 label { display: grid; gap: 5px; margin: 14px 0; color: var(--muted); font: 700 11px Arial, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
 input { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 2px; background: #faf7ee; color: var(--ink); font-family: Georgia, serif; }

@@ -193,6 +193,13 @@ There is one `daily_plan` row per Zurich-local date.
 `original_plan_json` is immutable after creation.
 `current_plan_json` contains user-approved replacements.
 Each replacement also creates a `plan_modification` audit row.
+The daily Exercise and Food pages use `GET /today/calendar` to browse saved daily plans one month at a time.
+The calendar uses Zurich-local dates, excludes future dates, and highlights days with completed or partially completed workout entries from any source.
+Workout days without a saved daily plan retain a marker but remain unavailable for plan navigation.
+Past daily pages and recording endpoints accept any date with a saved daily plan; opening a past date never generates a missing plan.
+The current day retains normal on-demand plan generation.
+Next Action is retired from daily responses, web and extension views, morning emails, and new planner proposals.
+Legacy preparation actions remain readable in saved plan documents for audit without rewriting original recommendations.
 
 Nutrition and workout entries retain prescriptions separately from actual results.
 End-of-day reconciliation changes only unresolved entries.

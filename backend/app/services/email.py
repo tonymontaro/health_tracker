@@ -292,16 +292,6 @@ def morning_email(
     ]
     optional = "\n".join(f"- {item}" for item in optional_items) or "None planned"
     optional_html = "".join(f"<li>{escape(item)}</li>" for item in optional_items)
-    if plan["prep_actions"]:
-        action = plan["prep_actions"][0]
-        prep_details = [str(action["action"])]
-        if action.get("when"):
-            prep_details.append(str(action["when"]))
-        if action.get("active_minutes") is not None:
-            prep_details.append(f"{action['active_minutes']} active min")
-        prep = " - ".join(prep_details)
-    else:
-        prep = "Nothing needed"
     shopping = plan["shopping"]["summary"]
     guidance = nutrition.get("guidance")
     text = f"""Coach Forge
@@ -326,9 +316,6 @@ Emergency option
 Training
 {workout_text(plan["workout"])}
 
-Next action
-{prep}
-
 Shopping
 {shopping}
 
@@ -346,11 +333,10 @@ Open today's exercise: {app_url}/today/exercise
 <h3>Optional protein</h3>{f"<ul>{optional_html}</ul>" if optional_html else "<p>None planned</p>"}
 {f"<h3>Meal guidance</h3><p>{escape(str(guidance))}</p>" if guidance else ""}
 <h3>Emergency option</h3>{emergency_plate_html()}
-<div style="margin-top:28px;padding:18px;background:#b44832;color:#f2eee2"><p style="margin-top:0;font:700 11px Arial,sans-serif;letter-spacing:1.2px;text-transform:uppercase">Next action</p><p>{escape(prep)}</p></div>
 <h3>Shopping</h3><p>{escape(shopping)}</p>
 <p style="margin-top:30px"><a style="display:inline-block;border:1px solid #25251f;padding:12px 16px;background:#25251f;color:#f2eee2;font:700 11px Arial,sans-serif;letter-spacing:1px;text-decoration:none;text-transform:uppercase" href="{escape(app_url)}/today/exercise">Open today's exercise →</a></p>
 </div></body></html>"""
-    return "Today - meals, training and next action", text, html
+    return "Today - meals and training", text, html
 
 
 def evening_email(

@@ -103,5 +103,5 @@
 }
 
 @media (forced-colors: active) {
-  .exercise-graphic, .meal-figure, .action-card, .chat-card { forced-color-adjust: auto; }
+  .exercise-graphic, .meal-figure, .chat-card { forced-color-adjust: auto; }
 }

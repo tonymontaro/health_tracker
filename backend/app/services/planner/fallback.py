@@ -13,7 +13,6 @@ from app.schemas.plan import (
     FruitProposal,
     MealProposal,
     NutritionPlanProposal,
-    PrepAction,
     RecommendationRationale,
     ShoppingPlanSummary,
     SnackProposal,
@@ -457,7 +456,6 @@ def build_fallback_plan(
 
     if weekday == "Thursday":
         workout = _rest()
-        prep: list[PrepAction] = []
     else:
         workout = {
             "Monday": lambda: _home_strength(db),
@@ -467,23 +465,6 @@ def build_fallback_plan(
             "Saturday": lambda: _gym_strength(db),
             "Sunday": lambda: _run(db),
         }.get(weekday, lambda: _bike(db))()
-        batch_template = next(
-            (template for template in selected_meals if template.batch_size > 1), None
-        )
-        prep = (
-            [
-                PrepAction(
-                    action=(
-                        f"Batch prepare {batch_template.batch_size} servings of "
-                        f"{batch_template.name}"
-                    ),
-                    active_minutes=batch_template.hands_on_minutes,
-                    when="Today",
-                )
-            ]
-            if batch_template
-            else []
-        )
     horizon_workout = horizon_day.get("workout", {}) if horizon_day else {}
     if horizon_workout.get("exercises") is not None:
         # Immutable v1 horizons stored full prescriptions. New horizons are strategic, so the
@@ -535,7 +516,6 @@ def build_fallback_plan(
             estimated_total_chf=0,
             items=[],
         ),
-        prep_actions=prep,
         short_summary="Fallback plan generated with recent-history variety and weekly meal quality.",
         rationale=RecommendationRationale(
             summary="This reliable fallback prioritizes consistency, measurable training, and low active preparation time.",

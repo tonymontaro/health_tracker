@@ -3,6 +3,7 @@ import { type FormEvent, type MouseEvent, useEffect, useId, useRef, useState } f
 import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { EntryStatus, Exercise, ExtractedWorkout, Meal, RecedingHorizonOutlook, StravaSyncResult, Today, WorkoutLogExtraction } from "../api/types";
+import { DailyPlanCalendar } from "../components/DailyPlanCalendar";
 import { ExerciseFigure } from "../components/exercise/ExerciseFigure";
 import { StravaInclineControl } from "../components/exercise/StravaInclineControl";
 import { StravaRenameControl } from "../components/exercise/StravaRenameControl";
@@ -12,17 +13,6 @@ import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl
 
 function datedPath(path: string, date: string): string {
   return `${path}?date=${encodeURIComponent(date)}`;
-}
-
-function recordingDateLabel(value: string, index: number): string {
-  const formatted = new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  if (index === 0) return `Today - ${formatted}`;
-  if (index === 1) return `Yesterday - ${formatted}`;
-  return formatted;
 }
 
 function pace(seconds?: number | null): string {
@@ -1016,7 +1006,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
   const data = today.data;
   const isFood = section === "food";
   const stravaActivities = data.actual_workouts.filter((entry) => entry.source === "strava" || entry.strava_activity);
-  const currentDate = data.recording_dates[0] ?? data.date;
+  const currentDate = data.current_date;
   const isHistorical = data.date !== currentDate;
   const tabSearch = isHistorical ? `?date=${encodeURIComponent(data.date)}` : "";
   const feedback = coachFeedback.data?.message ?? data.coach_feedback;
@@ -1037,7 +1027,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
         <NavLink to={`/today/exercise${tabSearch}`}>Exercise</NavLink>
         <NavLink to={`/today/food${tabSearch}`}>Food</NavLink>
       </nav>
-        <label className="date-selector"><span>Record date</span><select aria-label="Record date" value={data.date} onChange={(event) => setSearchParams(event.target.value === data.recording_dates[0] ? {} : { date: event.target.value })}>{data.recording_dates.map((value, index) => <option value={value} key={value}>{recordingDateLabel(value, index)}</option>)}</select></label>
+        <DailyPlanCalendar selectedDate={data.date} currentDate={currentDate} onSelect={(date) => setSearchParams(date === currentDate ? {} : { date })} />
       </div>
       {isFood && !isHistorical && <section className="card"><p className="eyebrow">Plan ahead</p><h2>Plan your next two weeks</h2><p>One main meal a day, an optional idea and one shopping list for each fixed two-week period.</p><NavLink to="/meals">Open meal calendar & shopping lists →</NavLink></section>}
       {!isFood && <ExerciseLead today={data} />}
@@ -1059,7 +1049,6 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
             <section className="card compact"><p className="eyebrow">{data.food_log ? "Original optional suggestions" : "Optional"}</p>{data.nutrition.snacks.map((snack) => <div className="list-item" key={snack.recommendation_id}><strong>{snack.name} <StatusPill status={data.nutrition_status[snack.recommendation_id]?.status ?? "planned"} /></strong><small>{snack.description}</small><NutritionSuggestionActions recommendationId={snack.recommendation_id} today={data} /></div>)}</section>
             <section className="card emergency-plate-card"><p className="eyebrow">Always-available fallback</p><h3>{data.emergency_plate.name}</h3><p>{data.emergency_plate.description}</p><div className="meta"><span>{data.emergency_plate.estimated_protein_g} g protein</span><span>{data.emergency_plate.hands_on_minutes} active min</span></div><div className="emergency-ingredients">{data.emergency_plate.ingredients.map((ingredient) => <small key={ingredient.name}><strong>{ingredient.quantity}</strong> {ingredient.name}</small>)}</div><p className="emergency-preparation">{data.emergency_plate.preparation}</p></section>
           </> : <>{!isHistorical && <WorkoutRegenerationCard today={data} />}<section className="card compact"><p className="eyebrow">Current target</p><h3>{data.current_target_goal ?? "No active target configured"}</h3>{data.current_target_goal && <><p>{data.rationale.summary}</p><strong>How today progresses it</strong><p>{data.rationale.progression_logic}</p></>}</section></>}
-          <section className="card action-card"><p className="eyebrow">Next action</p><h3>{data.next_action?.action ?? "Nothing to prepare"}</h3>{data.next_action && <p>{data.next_action.when} · {data.next_action.active_minutes} active min</p>}</section>
           {isFood && <section className="card compact"><p className="eyebrow">Shopping</p><p>Copy your two-week shopping list with main meals, fruit, snacks and nuts, or an AI prompt to find products and links. Optional meals are bought on the day.</p><NavLink to="/meals">Meal calendar & shopping lists →</NavLink></section>}
         </aside>
       </div>

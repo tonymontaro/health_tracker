@@ -197,7 +197,6 @@ class DailyPlanProposal(BaseModel):
     nutrition: NutritionPlanProposal
     workout: WorkoutPlanProposal
     shopping: ShoppingPlanSummary
-    prep_actions: list[PrepAction] = Field(max_length=1)
     short_summary: str
     rationale: RecommendationRationale
     assumptions: list[str] = Field(max_length=8)
@@ -221,7 +220,8 @@ class DailyPlanDocument(BaseModel):
     nutrition: NutritionPlan
     workout: WorkoutPlan
     shopping: ShoppingPlanSummary
-    prep_actions: list[PrepAction]
+    # Legacy saved plans retain their original preparation actions for audit only.
+    prep_actions: list[PrepAction] = Field(default_factory=list)
     short_summary: str
     rationale: RecommendationRationale
     assumptions: list[str]
@@ -283,7 +283,6 @@ def canonicalize_proposal(
         nutrition=nutrition,
         workout=workout,
         shopping=proposal.shopping,
-        prep_actions=proposal.prep_actions,
         short_summary=proposal.short_summary,
         rationale=proposal.rationale,
         assumptions=proposal.assumptions,
@@ -327,7 +326,6 @@ def proposal_from_document(document: DailyPlanDocument) -> DailyPlanProposal:
             summary=document.workout.summary,
         ),
         shopping=document.shopping,
-        prep_actions=document.prep_actions,
         short_summary=document.short_summary,
         rationale=document.rationale,
         assumptions=document.assumptions,

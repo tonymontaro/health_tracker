@@ -27,8 +27,8 @@ The detailed approval artifacts are [the preservation ledger](field-notes-featur
 
 | Priority | Destination | Route | Field Notes treatment |
 | --- | --- | --- | --- |
-| 1 | Exercise | `/today/exercise` | Exercise-first homepage with the daily hero, exercise figure, planned and actual work, recording, next action, and coaching thread |
-| 2 | Food | `/today/food` | Daily food edition with meal stories, recipes, fruit, snacks, fallback plate, diary evidence, next action, and coaching thread |
+| 1 | Exercise | `/today/exercise` | Exercise-first homepage with the daily hero, exercise figure, planned and actual work, recording, and coaching thread |
+| 2 | Food | `/today/food` | Daily food edition with meal stories, recipes, fruit, snacks, fallback plate, diary evidence, and coaching thread |
 | 3 | History | `/history/exercise`, `/history/nutrition` | Compact Archive page with an Exercise-first subsection and evidence-focused date index |
 | 4 | Inventory | `/inventory` | Operational Inventory and Provisions chapters with all current shopping behavior |
 | 5 | Settings | `/settings` | Compact configuration, integration, equipment, token, and runtime sections |
@@ -81,7 +81,7 @@ Every slice starts by comparing the working tree and commit with the audit point
 
 - Scope: `DATE-001`, `EXER-*`, and the Exercise portion of `CHAT-*`.
 - Files: `TodayPage.tsx`, `api/types.ts` only if a type refinement is needed without contract change, `ExerciseFigure.tsx`, Field Notes records/forms/overlays, and page styles.
-- Build: data-backed hero, all exercise figures, workout lead, structured completion, regeneration, Strava retrieval, diary analysis/review/submission, actual evidence, next action, and coaching thread.
+- Build: data-backed hero, all exercise figures, workout lead, structured completion, regeneration, Strava retrieval, diary analysis/review/submission, actual evidence, and coaching thread.
 - Preserve: every current request, payload, cache invalidation, historical restriction, lock, ownership rule, provider source, pain flag, note, measurement, and failure path.
 - Verify: run, bike, strength, bodyweight, recovery, rest, mixed, imported, corrected, locked, empty, pending, failure, and historical fixtures.
 - Isolation: Food continues on legacy composition until Slice 3.
@@ -90,7 +90,7 @@ Every slice starts by comparing the working tree and commit with the audit point
 
 - Scope: `FOOD-*` and the Food portion of `CHAT-*`.
 - Files: `TodayPage.tsx`, `MealFigure.tsx`, shared sheets/records, and page styles.
-- Build: one/two meal stories, recipe sheets, fruit, snacks, emergency plate, regeneration, diary recording, extraction evidence, assumptions, match confidence, next action, and coaching thread.
+- Build: one/two meal stories, recipe sheets, fruit, snacks, emergency plate, regeneration, diary recording, extraction evidence, assumptions, match confidence, and coaching thread.
 - Preserve: recommendation versus actual distinctions, authoritative diary locks, privacy copy, inventory deltas, historical window, and provider failure atomicity.
 - Verify: one/two meals, empty fruit/snacks, ate-nothing, matched/discarded, assumed portions, locked suggestions, recipe keyboard flow, and current/historical dates.
 - Isolation: Today legacy styles are removed only after both Exercise and Food pass.

@@ -1,7 +1,7 @@
 # Health Autopilot
 
 Health Autopilot is a single-user personal health and hybrid training planner.
-It produces one low-friction daily plan with one main meal, one optional meal, separate fruit and optional snacks, a measurable workout, and the next useful preparation or shopping action.
+It produces one low-friction daily plan with one main meal, one optional meal, separate fruit and optional snacks, and a measurable workout.
 The Meals page maintains at least fourteen days of recipes in fixed Monday-based two-week periods, with one copyable shopping list per period.
 Each shopping list also has a copyable AI search prompt for finding Swiss products, pack quantities, prices, and purchase links.
 Training retains a rolling fourteen-day AI horizon, a seven-day exercise outlook, and near-term adaptation from recorded outcomes.
@@ -31,6 +31,10 @@ After the first Monday, the calendar also shows the next complete two-week perio
 The current period and its shopping quantities stay fixed through the second Monday.
 The earliest saved meal week anchors the two-week cadence; older single-week records are paired without regenerating their recipes.
 A collapsed seven-day exercise outlook can be regenerated with an optional preference without changing the saved meal calendar.
+The date button on the daily Exercise and Food pages opens a monthly calendar, starting at the current Zurich-local month.
+Any past day with a saved daily plan can be opened, including fallback recommendations, without a seven-day limit.
+Days without saved recommendations are unavailable, and days with completed or partially completed exercise are highlighted in green.
+The Next Action feature has been removed from daily pages, the extension, and morning emails.
 
 ## Architecture
 

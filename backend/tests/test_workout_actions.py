@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import select
@@ -11,7 +12,7 @@ from app.db.session import get_db
 from app.main import app
 from app.services.coach import CoachMessage
 from app.services.planner.orchestrator import generate_daily_plan
-from app.services.recording_dates import available_recording_dates
+from app.services.recording_dates import current_recording_date
 from app.services.workout_feedback import ensure_workout_feedback
 
 
@@ -23,7 +24,8 @@ def test_recommended_exercise_can_be_completed_or_skipped_independently(
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
-    target = next(day for day in available_recording_dates(api_settings) if day.weekday() == 0)
+    current = current_recording_date(api_settings)
+    target = current - timedelta(days=current.weekday())
     generate_daily_plan(db, api_settings, target, use_ai=False)
     entries = list(
         db.scalars(
@@ -101,7 +103,8 @@ def test_batch_completion_records_a_difficulty_for_each_exercise(db: Session, se
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
-    target = next(day for day in available_recording_dates(api_settings) if day.weekday() == 0)
+    current = current_recording_date(api_settings)
+    target = current - timedelta(days=current.weekday())
     generate_daily_plan(db, api_settings, target, use_ai=False)
     entries = list(
         db.scalars(
@@ -164,7 +167,8 @@ def test_batch_completion_records_a_difficulty_for_each_exercise(db: Session, se
 def test_coach_feedback_refreshes_after_later_exercise_completion(
     db: Session, settings: Settings, seeded, monkeypatch
 ) -> None:
-    target = next(day for day in available_recording_dates(settings) if day.weekday() == 0)
+    current = current_recording_date(settings)
+    target = current - timedelta(days=current.weekday())
     generate_daily_plan(db, settings, target, use_ai=False)
     entries = list(
         db.scalars(
@@ -218,7 +222,8 @@ def test_completed_strava_exercise_difficulty_can_be_updated_without_replacing_i
         SESSION_SECRET="test-session-secret-with-more-than-32-characters",
         _env_file=None,
     )
-    target = next(day for day in available_recording_dates(api_settings) if day.weekday() == 0)
+    current = current_recording_date(api_settings)
+    target = current - timedelta(days=current.weekday())
     generate_daily_plan(db, api_settings, target, use_ai=False)
     entry = db.scalar(
         select(WorkoutEntry)

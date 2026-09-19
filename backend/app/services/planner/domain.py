@@ -69,8 +69,6 @@ def validate_plan(
         errors.append("The plan exceeds the profile's maximum number of main meals.")
     if len(proposal.workout.exercises) > profile.max_exercises_per_day:
         errors.append("The plan exceeds the profile's maximum number of exercises.")
-    if len(proposal.prep_actions) > 1:
-        errors.append("The plan contains more than one preparation session.")
 
     weekday = plan_date.strftime("%A")
     exercise_catalog = {
