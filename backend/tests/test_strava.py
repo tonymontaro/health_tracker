@@ -40,6 +40,7 @@ from app.services.strava import (
     set_treadmill_incline,
     sync_connection,
     sync_connection_for_date,
+    sync_connection_if_due,
     sync_webhook_activity,
 )
 from app.services.strava_naming import recommended_activity_name
@@ -814,6 +815,160 @@ def test_rename_api_auth_validation_scope_ownership_and_failure(
             assert (
                 await client.patch(incline_path, json={"incline_percent": 4})
             ).status_code == 404
+
+    try:
+        asyncio.run(requests())
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    "age_seconds,interval,expected",
+    [
+        (599, 10, False),
+        (600, 10, True),
+        (601, 10, True),
+        (None, 10, True),
+        (899, None, False),
+        (900, None, True),
+    ],
+)
+def test_automatic_sync_obeys_visit_and_scheduler_intervals(
+    db: Session, settings: Settings, seeded, age_seconds, interval, expected
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(801)])
+    connection = authorize(db, configured, seeded.account_id, provider)
+    last_synced = NOW - timedelta(seconds=age_seconds) if age_seconds is not None else None
+    connection.last_synced_at = last_synced
+    db.commit()
+
+    result = sync_connection_if_due(
+        db,
+        configured,
+        connection,
+        provider=provider,
+        now=NOW,
+        interval_minutes=interval,
+    )
+
+    assert (result is not None) is expected
+    assert bool(provider.activity_list_calls) is expected
+    db.refresh(connection)
+    assert connection.last_synced_at == (NOW if expected else last_synced)
+
+
+def test_automatic_sync_lock_survives_token_rotation_and_releases_after_failure(
+    db: Session, settings: Settings, seeded, monkeypatch
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(802)])
+    connection = authorize(db, configured, seeded.account_id, provider)
+    connection.access_token_expires_at = NOW
+    db.commit()
+    original_list = provider.list_activities
+    fail = True
+    overlap = FakeStrava()
+
+    def list_with_overlapping_check(*args, **kwargs):
+        assert (
+            sync_connection_if_due(
+                db,
+                configured,
+                connection,
+                provider=overlap,
+                now=NOW,
+                interval_minutes=10,
+            )
+            is None
+        )
+        if fail:
+            raise StravaIntegrationError("Strava unavailable")
+        return original_list(*args, **kwargs)
+
+    monkeypatch.setattr(provider, "list_activities", list_with_overlapping_check)
+    with pytest.raises(StravaIntegrationError, match="Strava unavailable"):
+        sync_connection_if_due(db, configured, connection, provider=provider, now=NOW)
+    assert provider.refresh_calls == 1
+    assert connection.last_synced_at is None
+
+    fail = False
+    result = sync_connection_if_due(db, configured, connection, provider=provider, now=NOW)
+    assert result and result["created"] == 1
+    assert overlap.activity_list_calls == []
+    assert connection.last_synced_at == NOW
+
+
+def test_visit_sync_requires_auth_and_csrf_and_checks_persisted_timestamp(
+    db: Session, settings: Settings, seeded, monkeypatch
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(803)])
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    monkeypatch.setattr("app.services.strava.datetime", FixedDatetime)
+    monkeypatch.setattr("app.services.strava.StravaClient", lambda _: provider)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_settings] = lambda: configured
+
+    async def requests():
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            path = "/api/v1/integrations/strava/sync-if-due"
+            assert (await client.post(path)).status_code == 401
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": settings.bootstrap_email,
+                    "password": settings.bootstrap_password.get_secret_value(),
+                },
+            )
+            assert (await client.post(path)).status_code == 403
+            client.headers["X-CSRF-Token"] = login.json()["csrf_token"]
+            assert (await client.post(path)).json() == {"synced": False}
+            connection = authorize(db, configured, seeded.account_id, provider)
+            connection.last_synced_at = NOW - timedelta(minutes=9, seconds=59)
+            db.commit()
+            assert (await client.post(path)).json() == {"synced": False}
+            assert provider.activity_list_calls == []
+            connection.last_synced_at = NOW - timedelta(minutes=10)
+            db.commit()
+            response = await client.post(path)
+            assert response.status_code == 200
+            assert response.json() == {
+                "synced": True,
+                "fetched": 1,
+                "created": 1,
+                "updated": 0,
+                "matched": 0,
+            }
+            assert (await client.post(path)).json() == {"synced": False}
+            assert len(provider.activity_list_calls) == 1
+            connection.status = "revoked"
+            connection.last_synced_at = None
+            db.commit()
+            assert (await client.post(path)).json() == {"synced": False}
+            connection.status = "connected"
+            db.commit()
+
+            def fail(*args, **kwargs):
+                raise StravaIntegrationError("Strava unavailable")
+
+            monkeypatch.setattr(provider, "list_activities", fail)
+            failed = await client.post(path)
+            assert failed.status_code == 502
+            assert connection.last_synced_at is None
+            other = UserAccount(email="other-visit@example.test", password_hash="unused")
+            db.add(other)
+            db.flush()
+            connection.account_id = other.id
+            db.commit()
+            assert (await client.post(path)).json() == {"synced": False}
 
     try:
         asyncio.run(requests())

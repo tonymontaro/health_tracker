@@ -985,12 +985,28 @@ function SevenDayOutlook({ outlook }: { outlook: RecedingHorizonOutlook }) {
 }
 
 export function TodayPage({ section }: { section: "food" | "exercise" }) {
+  const queryClient = useQueryClient();
   const [alternativeQuestion, setAlternativeQuestion] = useState("");
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedDate = searchParams.get("date");
   const todayPath = requestedDate ? datedPath("/today", requestedDate) : "/today";
   const today = useQuery({ queryKey: ["today", requestedDate ?? "current"], queryFn: () => api<Today>(todayPath) });
+  const visitSync = useQuery({
+    queryKey: ["strava-visit-sync"],
+    queryFn: async () => {
+      const result = await api<{ synced: boolean }>("/integrations/strava/sync-if-due", { method: "POST" });
+      if (result.synced) {
+        await Promise.all(["today", "today-details", "history", "daily-calendar", "coach-feedback", "strava"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+      }
+      return result;
+    },
+    enabled: today.isSuccess,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    retry: false,
+  });
   const coachFeedback = useQuery({
     queryKey: ["coach-feedback", today.data?.date],
     queryFn: () => api<{ message: string | null }>(datedPath("/today/workout/coach-feedback", today.data!.date), { method: "POST" }),
@@ -1020,6 +1036,7 @@ export function TodayPage({ section }: { section: "food" | "exercise" }) {
   }
   return (
     <div className={`field-notes-edition today-${section}`}>
+      {visitSync.error && <p className="error" role="status">Automatic Strava sync failed. {visitSync.error.message}</p>}
       <CoachFeedbackNote feedback={feedback} loading={coachFeedback.isLoading} />
       <TodayEditionHeader today={data} section={section} />
       <div className="edition-tools">

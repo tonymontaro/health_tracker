@@ -218,15 +218,19 @@ Open the popup, enter the API URL, web app URL, and token, then save.
 
 ## Email delivery
 
-Morning and evening messages are sent with the Resend Email API.
+Automatic morning and evening emails are disabled.
+The individual email commands remain available for explicit manual delivery through the Resend Email API.
 Set `RESEND_API_KEY`, `RESEND_FROM`, and `RESEND_TO` before invoking an email job.
 The sender must use a domain verified in Resend.
-Each scheduled message uses both database idempotency and a stable Resend idempotency key.
+Each message uses both database idempotency and a stable Resend idempotency key.
 
 ## Jobs and scheduler
 
-The nightly feedback email is due at 23:55 (11:55 pm) in `APP_TIMEZONE`, which defaults to `Europe/Zurich`.
+The scheduler retains Strava synchronization, daily plan generation, end-of-day reconciliation, and Sunday shopping preparation, using `APP_TIMEZONE` (default `Europe/Zurich`).
+It does not dispatch morning or evening emails.
 The scheduler checks for due jobs every minute.
+Daily plan generation is due at 00:05 (12:05 am) Zurich time, after Strava sync and reconciliation of the previous day.
+If the scheduler starts later, it catches up on its first check.
 Restart a running scheduler after changing its schedule so it loads the new times.
 
 Generate a plan manually:
@@ -416,6 +420,10 @@ The first sync imports the configured recent history window, which defaults to 9
 Later syncs re-read a 35-day lookback window so delayed uploads and edited activities are updated idempotently.
 Set `STRAVA_SYNC_MAX_ACTIVITIES_PER_RUN=2` while validating a new connection to cap each sync to the two newest activities, then raise or remove that override after testing.
 The scheduler checks for due syncs before morning planning and no more often than the configured interval.
+Opening a daily Exercise or Food page, or returning to its browser tab, also checks for Strava updates.
+If the last successful full sync is at least 10 minutes old, or no full sync has occurred yet, it imports updates and refreshes the displayed workout records.
+This check also runs from past daily pages and uses the normal import window, independently of the displayed date.
+Overlapping automatic checks share a database lock so multiple tabs and the scheduler do not poll Strava concurrently.
 The Settings page also provides a manual sync control.
 The Exercise page provides a date-bounded Retrieve from Strava action for today's activities without changing the periodic background-sync schedule.
 Its Regenerate exercise action retrieves the previous local day from Strava when connected, rebuilds a fresh history snapshot, and regenerates only today's unresolved workout while preserving nutrition.

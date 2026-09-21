@@ -423,15 +423,26 @@ def sync_connection_if_due(
     *,
     provider: StravaProvider | None = None,
     now: datetime | None = None,
+    interval_minutes: int | None = None,
 ) -> dict[str, int] | None:
     current = now or datetime.now(UTC)
-    if connection.status != "connected":
-        return None
-    if connection.last_synced_at and connection.last_synced_at > current - timedelta(
-        minutes=settings.strava_sync_interval_minutes
-    ):
-        return None
-    return sync_connection(db, settings, connection, provider=provider, now=current)
+    interval = (
+        settings.strava_sync_interval_minutes if interval_minutes is None else interval_minutes
+    )
+    # A dedicated transaction keeps this lock through token-refresh and import commits.
+    # Page visits and the scheduler share it, including across API worker processes.
+    lock_key = int.from_bytes(connection.id.bytes[:8], byteorder="big", signed=True)
+    with db.get_bind().engine.begin() as lock_db:
+        if not lock_db.scalar(select(func.pg_try_advisory_xact_lock(lock_key))):
+            return None
+        db.refresh(connection)
+        if connection.status != "connected":
+            return None
+        if connection.last_synced_at and connection.last_synced_at > current - timedelta(
+            minutes=interval
+        ):
+            return None
+        return sync_connection(db, settings, connection, provider=provider, now=current)
 
 
 def sync_all_connections(db: Session, settings: Settings) -> dict[str, int]:

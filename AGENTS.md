@@ -29,7 +29,9 @@ The frontend, extension, email jobs, and scheduler consume the same canonical da
 - The backend listens on `http://localhost:8001`; port 8000 belongs to another application on the owner's host.
 - The Vite frontend listens on `http://localhost:5173` and proxies `/api` and `/health` to port 8001.
 - Application dates are based on `Europe/Zurich`, not UTC or the agent's inferred locale.
-- The nightly feedback email is due at 23:55 in `APP_TIMEZONE` (default `Europe/Zurich`).
+- Automatic morning and evening emails are disabled; the scheduler retains Strava sync, daily planning, reconciliation, and Sunday shopping preparation.
+  Daily planning is due at 00:05 in `APP_TIMEZONE`, after Strava sync and reconciliation of the previous day.
+  Daily-page visits and returning to the tab also check Strava, syncing when the last full sync is at least 10 minutes old.
   Restart a running scheduler after changing its schedule.
 - `.env` is private and may contain live OpenAI, Resend, Strava, session, and database secrets.
   Never print, quote, commit, or overwrite it.

@@ -312,6 +312,12 @@ Food extraction sends only the diary text, today's nutrition suggestions, and th
 ## Jobs
 
 Every job is a callable function and can be invoked by a hosting provider cron or by the included scheduler process.
-The scheduler performs a rate-limited Strava sync before morning plan generation, allowing imported actuals to affect the next recommendation.
+The scheduler performs a rate-limited Strava sync before daily plan generation, allowing imported actuals to affect the next recommendation.
+At or after 00:05 in the application timezone, it reconciles the previous day before generating today's plan.
+Automatic morning and evening email dispatch is disabled; explicit email job commands remain available.
+Daily Exercise and Food pages call the authenticated, CSRF-protected `POST /integrations/strava/sync-if-due` after loading their saved recommendations and when the browser tab becomes active again.
+The backend skips disconnected accounts and full syncs completed within the last 10 minutes, while scheduled polling retains its configured interval.
+Both automatic paths share a PostgreSQL advisory lock held on a separate connection through token rotation and import commits, then recheck the persisted sync timestamp before importing.
+Successful page-triggered imports refresh daily records, history, calendar markers, connection status, and workout coaching feedback.
 Notification uniqueness and plan-date uniqueness make repeated invocations safe.
 Email delivery failure does not regenerate or remove the daily plan.

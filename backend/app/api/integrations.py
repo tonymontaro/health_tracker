@@ -26,6 +26,7 @@ from app.services.strava import (
     set_treadmill_incline,
     sync_connection,
     sync_connection_for_date,
+    sync_connection_if_due,
     sync_webhook_activity,
 )
 from app.services.strava_naming import WRITE_SCOPE
@@ -135,6 +136,22 @@ def sync_strava(
         raise HTTPException(status_code=404, detail="Strava is not connected")
     try:
         return sync_connection(db, settings, connection)
+    except StravaIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/sync-if-due")
+def sync_strava_on_visit(
+    auth: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    connection = _connection(db, auth.account.id)
+    if connection is None or not settings.strava_configured:
+        return {"synced": False}
+    try:
+        result = sync_connection_if_due(db, settings, connection, interval_minutes=10)
+        return {"synced": result is not None, **(result or {})}
     except StravaIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

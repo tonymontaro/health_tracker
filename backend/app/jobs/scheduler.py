@@ -9,8 +9,6 @@ from app.jobs.tasks import (
     finalize_day,
     generate_morning_plan,
     generate_shopping,
-    send_evening_checkin,
-    send_morning_email,
 )
 from app.services.strava import sync_all_connections
 
@@ -26,18 +24,11 @@ def run_due_jobs() -> list[str]:
         sync_result = sync_all_connections(db, settings)
         if sync_result["connections"]:
             completed.append("strava_sync")
-        if local_now.hour > 5 or (local_now.hour == 5 and local_now.minute >= 50):
-            generate_morning_plan(db, settings, today)
-            completed.append("morning_plan")
-        if local_now.hour >= 6:
-            send_morning_email(db, settings, today)
-            completed.append("morning_email")
-        if local_now.hour == 23 and local_now.minute >= 55:
-            send_evening_checkin(db, settings, today)
-            completed.append("evening_email")
         if local_now.hour > 0 or local_now.minute >= 5:
             finalize_day(db, today - timedelta(days=1))
             completed.append("finalize_day")
+            generate_morning_plan(db, settings, today)
+            completed.append("morning_plan")
         if local_now.weekday() == 6 and local_now.hour >= 17:
             week_start = today + timedelta(days=1)
             generate_shopping(db, settings, week_start)
