@@ -417,6 +417,156 @@ def planned_treadmill(db: Session, target: date = TARGET) -> WorkoutEntry:
     return entry
 
 
+@pytest.mark.parametrize("sync_kind", ["scheduled", "day", "webhook"])
+@pytest.mark.parametrize("import_first", [True, False])
+@pytest.mark.parametrize("planned_status", ["planned", "skipped_assumed", "deleted"])
+def test_virtual_run_completes_recommendation_even_when_imported_before_plan(
+    db: Session,
+    settings: Settings,
+    seeded,
+    monkeypatch,
+    sync_kind: str,
+    import_first: bool,
+    planned_status: str,
+) -> None:
+    configured = strava_settings(settings)
+    provider = WritableStrava(
+        [activity(940, name="Zwift - Watopia", sport_type="VirtualRun", elevation_gain=62)]
+    )
+    connection = authorize(db, configured, seeded.account_id, provider)
+    if import_first:
+        # Defer automatic renaming until the recommendation is available.
+        sync_connection(db, configured, connection, provider=provider, now=NOW + timedelta(days=1))
+        imported = db.scalar(select(WorkoutEntry))
+        imported.difficulty_1_to_10 = 7
+        imported.pain_flag = True
+        imported.notes = "Feedback saved before the plan"
+        db.commit()
+        set_treadmill_incline(db, configured, connection, 940, 4)
+
+    planned = planned_treadmill(db)
+    planned.exercise_name = "Treadmill tempo run"
+    planned.status = planned_status
+    db.commit()
+    prescription = deepcopy(planned.prescription_json)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    monkeypatch.setattr("app.services.strava.datetime", FixedDatetime)
+    if sync_kind == "webhook":
+        sync_webhook_activity(
+            db,
+            configured,
+            owner_id=connection.athlete_id,
+            activity_id=940,
+            aspect_type="update" if import_first else "create",
+            provider=provider,
+        )
+    elif sync_kind == "day":
+        sync_connection_for_date(db, configured, connection, TARGET, provider=provider, now=NOW)
+    else:
+        result = sync_connection(db, configured, connection, provider=provider, now=NOW)
+        assert result["matched"] == 1
+
+    db.refresh(planned)
+    assert planned.status == "completed"
+    assert planned.source == "strava"
+    assert planned.prescription_json == prescription
+    assert planned.actual_json["strava"]["activity_id"] == 940
+    assert planned.actual_json["sport_type"] == "VirtualRun"
+    assert planned.actual_json["distance_km"] == 6.2
+    if import_first:
+        assert planned.difficulty_1_to_10 == 7
+        assert planned.pain_flag is True
+        assert planned.notes == "Feedback saved before the plan"
+        assert planned.actual_json["incline_percent"] == 4
+    assert db.scalar(select(func.count(WorkoutEntry.id))) == 1
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 1
+    match = db.scalar(select(StravaActivityMatch))
+    assert match.workout_entry_id == planned.id
+    assert match.match_kind == "planned_recommendation"
+    assert match.previous_entry_json["status"] == planned_status
+    today = _status_maps(db, TARGET)[1][planned.planned_recommendation_id]
+    assert today["status"] == "completed"
+    assert today == history_day(db, TARGET)["workouts"][0]
+    assert _actual_workouts(db, TARGET) == []
+    assert today["strava_activity"]["recommended_name"] == "Treadmill tempo run - 62m elevation"
+    assert provider.rename_calls == [(940, "Treadmill tempo run - 62m elevation")]
+    assert calculate_training_summary(db, TARGET)["completed_exercise_entries_28d"] == 1
+
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    assert db.scalar(select(func.count(WorkoutEntry.id))) == 1
+    assert len(provider.rename_calls) == 1
+    remove_activity(db, configured, connection, 940)
+    db.refresh(planned)
+    assert planned.status == planned_status
+    assert planned.source == "recommended"
+    assert planned.actual_json is None
+    assert planned.prescription_json == prescription
+
+
+@pytest.mark.parametrize("unavailable_reason", ["completed", "other_date", "other_type", "linked"])
+def test_virtual_run_does_not_reuse_unavailable_recommendation(
+    db: Session, settings: Settings, seeded, unavailable_reason: str
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(941, sport_type="VirtualRun")])
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    planned = planned_treadmill(
+        db, TARGET + timedelta(days=1) if unavailable_reason == "other_date" else TARGET
+    )
+    if unavailable_reason == "completed":
+        planned.status = "completed"
+        planned.source = "manual"
+        planned.actual_json = {"summary": "A separate completed run"}
+    elif unavailable_reason == "other_type":
+        planned.prescription_json = {"exercise_type": "bike"}
+    elif unavailable_reason == "linked":
+        provider.activities = [activity(942)]
+        sync_connection(db, configured, connection, provider=provider, now=NOW)
+        delete_workout_entry(db, planned, TARGET)
+        provider.activities = [activity(941, sport_type="VirtualRun")]
+    db.commit()
+    previous_status = planned.status
+    previous_actual = deepcopy(planned.actual_json)
+
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+
+    db.refresh(planned)
+    assert planned.status == previous_status
+    assert planned.actual_json == previous_actual
+    assert len(_actual_workouts(db, TARGET)) == 1
+    assert _actual_workouts(db, TARGET)[0]["strava_activity"]["activity_id"] == 941
+
+
+def test_multiple_virtual_runs_complete_available_plan_once_without_losing_imports(
+    db: Session, settings: Settings, seeded
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava(
+        [activity(943, sport_type="VirtualRun"), activity(944, sport_type="VirtualRun")]
+    )
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    planned = planned_treadmill(db)
+
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+
+    db.refresh(planned)
+    assert planned.status == "completed"
+    assert db.scalar(select(func.count(WorkoutEntry.id))) == 2
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 2
+    rows = history_day(db, TARGET)["workouts"]
+    assert {row["strava_activity"]["activity_id"] for row in rows} == {943, 944}
+    assert len(_actual_workouts(db, TARGET)) == 1
+    assert calculate_training_summary(db, TARGET)["completed_exercise_entries_28d"] == 2
+
+
 @pytest.mark.parametrize("sport_type", ["Run", "VirtualRun", "TrailRun"])
 @pytest.mark.parametrize("has_plan", [True, False])
 @pytest.mark.parametrize(

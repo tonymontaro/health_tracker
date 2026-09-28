@@ -59,7 +59,7 @@ STRENGTH_TYPES = {
     "WeightTraining",
     "Workout",
 }
-MATCHABLE_STATUSES = {"planned", "skipped_assumed", "skipped_by_workout_log"}
+MATCHABLE_STATUSES = {"planned", "skipped_assumed", "skipped_by_workout_log", "deleted"}
 
 
 class StravaIntegrationError(RuntimeError):
@@ -1003,6 +1003,21 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
         ):
             _remove_materialized_activity(db, activity)
             matches = []
+    selected_entries: list[WorkoutEntry] = []
+    prior_import: dict[str, Any] | None = None
+    if (
+        activity.sport_type == "VirtualRun"
+        and len(matches) == 1
+        and matches[0].previous_entry_json.get("generated")
+    ):
+        entry = db.get(WorkoutEntry, matches[0].workout_entry_id)
+        if entry and (entry.source == "strava" or entry.status == "deleted"):
+            # A plan can appear after the first import. Reuse it on the next sync.
+            selected_entries = _matching_recommendations(db, activity)
+            if selected_entries:
+                prior_import = _entry_state(entry)
+                _remove_materialized_activity(db, activity)
+                matches = []
     if matches:
         for match in matches:
             entry = db.get(WorkoutEntry, match.workout_entry_id)
@@ -1019,24 +1034,8 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
                     entry.prescription_json = _imported_prescription(activity)
         return 0
 
-    candidates = list(
-        db.scalars(
-            select(WorkoutEntry).where(
-                WorkoutEntry.entry_date == activity.activity_date,
-                WorkoutEntry.planned_recommendation_id.is_not(None),
-                WorkoutEntry.status.in_(MATCHABLE_STATUSES),
-            )
-        )
-    )
-    compatible = [
-        entry for entry in candidates if _compatible(entry, _exercise_type(activity.sport_type))
-    ]
-    exercise_type = _exercise_type(activity.sport_type)
-    if exercise_type in {"strength", "bodyweight"}:
-        selected_entries = compatible
-    else:
-        best_match = max(compatible, key=lambda item: _match_score(item, activity), default=None)
-        selected_entries = [best_match] if best_match else []
+    if not selected_entries:
+        selected_entries = _matching_recommendations(db, activity)
 
     if not selected_entries:
         entry = WorkoutEntry(
@@ -1062,6 +1061,16 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
 
     for entry in selected_entries:
         previous = _entry_state(entry)
+        if prior_import:
+            if prior_import["difficulty_1_to_10"] is not None:
+                entry.difficulty_1_to_10 = prior_import["difficulty_1_to_10"]
+            entry.pain_flag = entry.pain_flag or prior_import["pain_flag"]
+            entry.notes = (
+                "\n".join(
+                    dict.fromkeys(note for note in (entry.notes, prior_import["notes"]) if note)
+                )
+                or None
+            )
         entry.actual_json = actual
         entry.status = "completed"
         entry.source = "strava"
@@ -1076,6 +1085,29 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
             )
         )
     return len(selected_entries)
+
+
+def _matching_recommendations(db: Session, activity: StravaActivity) -> list[WorkoutEntry]:
+    candidates = list(
+        db.scalars(
+            select(WorkoutEntry)
+            .where(
+                WorkoutEntry.entry_date == activity.activity_date,
+                WorkoutEntry.planned_recommendation_id.is_not(None),
+                WorkoutEntry.status.in_(MATCHABLE_STATUSES),
+                ~select(StravaActivityMatch.id)
+                .where(StravaActivityMatch.workout_entry_id == WorkoutEntry.id)
+                .exists(),
+            )
+            .order_by(WorkoutEntry.created_at, WorkoutEntry.id)
+        )
+    )
+    exercise_type = _exercise_type(activity.sport_type)
+    compatible = [entry for entry in candidates if _compatible(entry, exercise_type)]
+    if exercise_type in {"strength", "bodyweight"}:
+        return compatible
+    best_match = max(compatible, key=lambda item: _match_score(item, activity), default=None)
+    return [best_match] if best_match else []
 
 
 def _remove_materialized_activity(db: Session, activity: StravaActivity) -> None:
