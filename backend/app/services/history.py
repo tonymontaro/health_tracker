@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import func, select, union
+from sqlalchemy import delete, func, select, union
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -15,7 +15,9 @@ from app.db.models import (
     ProfileSnapshot,
     StravaActivity,
     StravaActivityMatch,
+    StravaConnection,
     UserProfile,
+    WorkoutCoachFeedback,
     WorkoutEntry,
 )
 from app.schemas.plan import DailyPlanDocument, proposal_from_document
@@ -30,7 +32,7 @@ def history_index(db: Session, limit: int = 90) -> list[dict[str, Any]]:
     date_union = union(
         select(DailyPlan.plan_date.label("entry_date")),
         select(NutritionEntry.entry_date.label("entry_date")),
-        select(WorkoutEntry.entry_date.label("entry_date")),
+        select(WorkoutEntry.entry_date.label("entry_date")).where(WorkoutEntry.status != "deleted"),
         select(DailyFoodLog.log_date.label("entry_date")),
         select(DailyWorkoutLog.log_date.label("entry_date")),
     ).subquery()
@@ -62,7 +64,7 @@ def history_index(db: Session, limit: int = 90) -> list[dict[str, Any]]:
                 func.count(WorkoutEntry.id),
                 func.count(WorkoutEntry.id).filter(WorkoutEntry.source == "strava"),
             )
-            .where(WorkoutEntry.entry_date.in_(dates))
+            .where(WorkoutEntry.entry_date.in_(dates), WorkoutEntry.status != "deleted")
             .group_by(WorkoutEntry.entry_date)
         ).all()
     }
@@ -209,6 +211,29 @@ def update_workout_difficulty(
     return entry
 
 
+def delete_workout_entry(db: Session, entry: WorkoutEntry, as_of: date) -> None:
+    # Keep import links so Strava can restore this record without creating a duplicate.
+    # Take the same locks as Strava imports and diary submissions before changing the entry.
+    db.scalar(
+        select(StravaConnection)
+        .join(StravaActivity, StravaActivity.connection_id == StravaConnection.id)
+        .join(StravaActivityMatch, StravaActivityMatch.activity_id == StravaActivity.id)
+        .where(StravaActivityMatch.workout_entry_id == entry.id)
+        .with_for_update(of=StravaConnection)
+    )
+    db.scalar(select(DailyPlan).where(DailyPlan.plan_date == entry.entry_date).with_for_update())
+    db.refresh(entry, with_for_update=True)
+    entry.status = "deleted"
+    entry.workout_log_id = None
+    db.execute(
+        delete(WorkoutCoachFeedback).where(WorkoutCoachFeedback.feedback_date == entry.entry_date)
+    )
+    profile = db.scalar(select(UserProfile))
+    if profile:
+        recalculate_derived_summary(db, profile, as_of)
+    db.commit()
+
+
 def history_day(db: Session, target_date: date) -> dict[str, Any]:
     plan = db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date))
     food_log = db.scalar(select(DailyFoodLog).where(DailyFoodLog.log_date == target_date))
@@ -223,7 +248,7 @@ def history_day(db: Session, target_date: date) -> dict[str, Any]:
     workouts = list(
         db.scalars(
             select(WorkoutEntry)
-            .where(WorkoutEntry.entry_date == target_date)
+            .where(WorkoutEntry.entry_date == target_date, WorkoutEntry.status != "deleted")
             .order_by(WorkoutEntry.created_at)
         )
     )

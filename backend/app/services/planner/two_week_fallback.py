@@ -145,6 +145,7 @@ def _adaptation_evidence(db: Session, window_start: date) -> dict[str, bool]:
             select(WorkoutEntry).where(
                 WorkoutEntry.entry_date == window_start - timedelta(days=1),
                 WorkoutEntry.planned_recommendation_id.is_not(None),
+                WorkoutEntry.status != "deleted",
             )
         )
     )

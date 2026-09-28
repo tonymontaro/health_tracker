@@ -11,7 +11,11 @@ from app.db.models import DerivedSummary, NutritionEntry, UserProfile, WorkoutEn
 def calculate_training_summary(db: Session, as_of: date) -> dict[str, Any]:
     since_28 = as_of - timedelta(days=27)
     entries = list(
-        db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date.between(since_28, as_of)))
+        db.scalars(
+            select(WorkoutEntry).where(
+                WorkoutEntry.entry_date.between(since_28, as_of), WorkoutEntry.status != "deleted"
+            )
+        )
     )
     entries.sort(key=lambda entry: (entry.entry_date, entry.created_at))
     completed = [entry for entry in entries if entry.status in {"completed", "partial"}]

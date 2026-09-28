@@ -298,7 +298,11 @@ def _replace_materialized_workout(
             )
         )
     for entry in old_entries:
-        db.delete(entry)
+        if entry.status == "deleted":
+            # Preserve deleted records and their import links when replacing recommendations.
+            entry.planned_recommendation_id = None
+        else:
+            db.delete(entry)
 
     catalog = {
         exercise.name: exercise
@@ -337,12 +341,16 @@ def _require_unresolved_workout(db: Session, plan: DailyPlan, document: DailyPla
     ]
     if len(planned_entries) != len(recommendation_ids):
         raise WorkoutRegenerationError("A materialized workout recommendation is missing")
-    if any(entry.status != "planned" or entry.actual_json for entry in planned_entries):
+    if any(
+        entry.status != "deleted" and (entry.status != "planned" or entry.actual_json)
+        for entry in planned_entries
+    ):
         raise WorkoutRegenerationError(
             "The workout can only be regenerated before it is completed, skipped, or recorded."
         )
     if any(
         entry.planned_recommendation_id is None
+        and entry.status != "deleted"
         and (entry.actual_json is not None or entry.status == "completed")
         for entry in entries
     ):

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { DailyFoodLog, DailyWorkoutLog, EntryStatus } from "../api/types";
 import { StatusPill } from "../components/StatusPill";
 import { WorkoutDifficultyControl } from "../components/WorkoutDifficultyControl";
+import { ConfirmDialog } from "../components/field-notes/ConfirmDialog";
 import { StravaInclineControl } from "../components/exercise/StravaInclineControl";
 import { StravaRenameControl } from "../components/exercise/StravaRenameControl";
 
@@ -138,11 +139,13 @@ function ExerciseHistory({
   day,
   onPatch,
   onRecord,
+  onDelete,
   pending,
 }: {
   day: HistoryDay;
   onPatch: (id: string, payload: Record<string, unknown>) => void;
   onRecord: (entry: EntryStatus) => void;
+  onDelete: (entry: EntryStatus) => void;
   pending: boolean;
 }) {
   return (
@@ -154,7 +157,7 @@ function ExerciseHistory({
         {day.workouts.map((entry) => {
           const activityId = stravaActivityId(entry);
           const hasEvaluation = entry.difficulty_1_to_10 != null || Boolean(entry.pain_flag);
-          return <HistoryWorkoutEntry entry={entry} activityId={activityId} hasEvaluation={hasEvaluation} pending={pending} onPatch={onPatch} onRecord={onRecord} key={`${entry.id}:${entry.difficulty_1_to_10 ?? "unset"}`} />;
+          return <HistoryWorkoutEntry entry={entry} activityId={activityId} hasEvaluation={hasEvaluation} pending={pending} onPatch={onPatch} onRecord={onRecord} onDelete={onDelete} key={`${entry.id}:${entry.difficulty_1_to_10 ?? "unset"}`} />;
         })}
       </section>
     </>
@@ -168,6 +171,7 @@ function HistoryWorkoutEntry({
   pending,
   onPatch,
   onRecord,
+  onDelete,
 }: {
   entry: EntryStatus;
   activityId: number | null;
@@ -175,6 +179,7 @@ function HistoryWorkoutEntry({
   pending: boolean;
   onPatch: (id: string, payload: Record<string, unknown>) => void;
   onRecord: (entry: EntryStatus) => void;
+  onDelete: (entry: EntryStatus) => void;
 }) {
   const [difficulty, setDifficulty] = useState(entry.difficulty_1_to_10 ?? 5);
   const hasRecordedOutcome = Boolean(entry.actual) || entry.status === "completed" || entry.status === "partial";
@@ -195,7 +200,11 @@ function HistoryWorkoutEntry({
         <button type="button" className="quiet small" disabled={pending} onClick={() => onPatch(entry.id, { difficulty_1_to_10: difficulty })}>Save difficulty</button>
       </div>}
     </div>
-    <div className="actions"><button className="quiet small" onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button><button className="quiet small" onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button></div>
+    <div className="actions">
+      <button type="button" className="quiet small" disabled={pending} onClick={() => onRecord(entry)}>{activityId ? "Correct record" : "Record actual"}</button>
+      <button type="button" className="quiet small" disabled={pending} onClick={() => onPatch(entry.id, { status: "skipped" })}>Mark skipped</button>
+      <button type="button" className="quiet small" disabled={pending} onClick={() => onDelete(entry)} aria-label={`Delete exercise record: ${entry.exercise_name ?? "Exercise"}`}>Delete record</button>
+    </div>
   </div>;
 }
 
@@ -203,6 +212,7 @@ export function HistoryPage({ section }: { section: HistorySection }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [editingWorkout, setEditingWorkout] = useState<EntryStatus | null>(null);
+  const [deletingWorkout, setDeletingWorkout] = useState<{ entry: EntryStatus; date: string } | null>(null);
   const history = useQuery({ queryKey: ["history"], queryFn: () => api<HistorySummary[]>("/history") });
   const visibleHistory = (history.data ?? []).filter((item) => section === "nutrition"
     ? item.nutrition_count > 0 || item.has_food_log
@@ -216,6 +226,19 @@ export function HistoryPage({ section }: { section: HistorySection }) {
         queryClient.invalidateQueries({ queryKey: ["history"] }),
         queryClient.invalidateQueries({ queryKey: ["today"] }),
         queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
+      ]);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: ({ entry, date }: { entry: EntryStatus; date: string }) => api<void>(`/history/${date}/workout/${entry.id}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      setDeletingWorkout(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["history"] }),
+        queryClient.invalidateQueries({ queryKey: ["today"] }),
+        queryClient.invalidateQueries({ queryKey: ["today-details"] }),
+        queryClient.invalidateQueries({ queryKey: ["daily-calendar"] }),
         queryClient.invalidateQueries({ queryKey: ["coach-feedback"] }),
       ]);
     },
@@ -243,7 +266,7 @@ export function HistoryPage({ section }: { section: HistorySection }) {
           {day.data && <>
             {section === "nutrition"
               ? <NutritionHistory day={day.data} onPatch={(id, payload) => patch.mutate({ type: "nutrition", id, payload })} />
-              : <ExerciseHistory day={day.data} pending={patch.isPending} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={(entry) => { patch.reset(); setEditingWorkout(entry); }} />}
+              : <ExerciseHistory day={day.data} pending={patch.isPending || remove.isPending} onPatch={(id, payload) => patch.mutate({ type: "workout", id, payload })} onRecord={(entry) => { patch.reset(); setEditingWorkout(entry); }} onDelete={(entry) => { remove.reset(); setDeletingWorkout({ entry, date: day.data.date }); }} />}
             {day.data.profile_snapshot && <section className="card compact"><p className="eyebrow">Profile at recommendation time</p><p>{day.data.profile_snapshot.short_summary}</p></section>}
             {day.data.original_plan && <details className="card"><summary>Original daily recommendation</summary><pre>{JSON.stringify(day.data.original_plan, null, 2)}</pre></details>}
           </>}
@@ -251,6 +274,16 @@ export function HistoryPage({ section }: { section: HistorySection }) {
       </div>
       {patch.error && <p className="error">{patch.error.message}</p>}
       <WorkoutCorrectionDialog entry={editingWorkout} pending={patch.isPending} error={patch.error?.message ?? null} onClose={() => setEditingWorkout(null)} onSubmit={(entry, summary, difficulty) => patch.mutate({ type: "workout", id: entry.id, payload: { status: "completed", actual: { summary }, difficulty_1_to_10: difficulty } }, { onSuccess: () => setEditingWorkout(null) })} />
+      <ConfirmDialog
+        open={deletingWorkout !== null}
+        title="Delete exercise record?"
+        description={deletingWorkout ? `Delete "${deletingWorkout.entry.exercise_name ?? "Exercise"}" from ${dateLabel(deletingWorkout.date)}? It will be removed from your history and training totals. Saved recommendations are preserved.${stravaActivityId(deletingWorkout.entry) ? " If the activity remains on Strava, syncing it will restore this record. Delete it on Strava too to keep it removed." : ""}` : ""}
+        confirmLabel="Delete record"
+        pending={remove.isPending}
+        error={remove.error?.message}
+        onCancel={() => setDeletingWorkout(null)}
+        onConfirm={() => { if (deletingWorkout) remove.mutate(deletingWorkout); }}
+      />
     </>
   );
 }

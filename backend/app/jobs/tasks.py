@@ -83,7 +83,11 @@ def _send_plan_email(
         subject, text, html = morning_email(plan.current_plan_json, settings.app_base_url, note)
     else:
         workout_entries = list(
-            db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target_date))
+            db.scalars(
+                select(WorkoutEntry).where(
+                    WorkoutEntry.entry_date == target_date, WorkoutEntry.status != "deleted"
+                )
+            )
         )
         nutrition_entries = list(
             db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == target_date))

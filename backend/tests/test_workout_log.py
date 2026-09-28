@@ -14,7 +14,7 @@ from app.db.models import ApiToken, DailyWorkoutLog, WorkoutCoachFeedback, Worko
 from app.db.session import get_db
 from app.main import app
 from app.schemas.workout_log import ExtractedWorkout, WorkoutLogExtraction
-from app.services.history import correct_workout_entry
+from app.services.history import correct_workout_entry, delete_workout_entry, history_day
 from app.services.metrics import calculate_training_summary
 from app.services.planner.orchestrator import generate_daily_plan
 from app.services.workout_log import (
@@ -319,6 +319,66 @@ def test_workout_log_reanalysis_preserves_later_history_correction(
     assert planned.source == "history_correction"
     assert planned.actual_json == {"summary": "Corrected exact performance"}
     assert planned.workout_log_id is None
+
+
+def test_workout_log_reanalysis_preserves_history_deletion(
+    db: Session, settings: Settings, seeded
+) -> None:
+    generate_daily_plan(db, settings, TARGET, use_ai=False)
+    planned = db.scalar(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET))
+    process_daily_workout_log(
+        db,
+        settings,
+        TARGET,
+        "Bench press and yoga.",
+        extraction=extraction(matched_recommendation_id=planned.planned_recommendation_id),
+    )
+    unplanned = db.scalar(
+        select(WorkoutEntry).where(WorkoutEntry.planned_recommendation_id.is_(None))
+    )
+    for entry in (planned, unplanned):
+        delete_workout_entry(db, entry, TARGET)
+        assert entry.workout_log_id is None
+    process_daily_workout_log(
+        db,
+        settings,
+        TARGET,
+        "I did not complete any other workout.",
+        extraction=no_workout_extraction(),
+    )
+    for entry in (planned, unplanned):
+        db.refresh(entry)
+        assert entry.status == "deleted"
+        assert str(entry.id) not in {row["id"] for row in history_day(db, TARGET)["workouts"]}
+
+
+def test_workout_log_does_not_restore_a_record_deleted_during_analysis(
+    db: Session, settings: Settings, seeded
+) -> None:
+    generate_daily_plan(db, settings, TARGET, use_ai=False)
+    planned = db.scalar(select(WorkoutEntry).where(WorkoutEntry.entry_date == TARGET))
+
+    class ConcurrentDeletion(FakeExtractor):
+        def extract(self, raw_text, recommendations):
+            delete_workout_entry(db, planned, TARGET)
+            return super().extract(raw_text, recommendations)
+
+    with pytest.raises(WorkoutLogExtractionError, match="unknown recommendation ID"):
+        process_daily_workout_log(
+            db,
+            settings,
+            TARGET,
+            "I completed the first exercise.",
+            extractor=ConcurrentDeletion(
+                extraction(
+                    matched_recommendation_id=planned.planned_recommendation_id,
+                    include_unplanned=False,
+                )
+            ),
+        )
+    db.refresh(planned)
+    assert planned.status == "deleted"
+    assert db.scalar(select(DailyWorkoutLog)) is None
 
 
 def test_workout_log_endpoint_requires_auth_and_records_with_bearer_token(

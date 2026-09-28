@@ -22,6 +22,7 @@ from app.db.session import get_db
 from app.main import app
 from app.services.history import (
     correct_workout_entry,
+    delete_workout_entry,
     history_day,
     history_index,
     serialize_workout,
@@ -43,7 +44,7 @@ from app.services.strava import (
     sync_connection_if_due,
     sync_webhook_activity,
 )
-from app.services.strava_naming import recommended_activity_name
+from app.services.strava_naming import is_generic_activity_name, recommended_activity_name
 
 TARGET = date(2026, 8, 10)
 NOW = datetime(2026, 8, 10, 18, tzinfo=UTC)
@@ -415,6 +416,292 @@ def planned_treadmill(db: Session, target: date = TARGET) -> WorkoutEntry:
     return entry
 
 
+@pytest.mark.parametrize("has_plan", [True, False])
+@pytest.mark.parametrize("corrected", [True, False])
+@pytest.mark.parametrize("sync_kind", ["polling", "day", "webhook"])
+def test_strava_sync_restores_locally_deleted_record(
+    db: Session,
+    settings: Settings,
+    seeded,
+    monkeypatch,
+    has_plan: bool,
+    corrected: bool,
+    sync_kind: str,
+) -> None:
+    configured = strava_settings(settings)
+    provider = WritableStrava(
+        [activity(930, sport_type="VirtualRun", name="Zwift - Volcano Circuit Run in Watopia")]
+    )
+    if has_plan:
+        planned_treadmill(db)
+    connection = authorize(db, configured, seeded.account_id, provider)
+    # Import as historical so the original activity has no successful name update yet.
+    sync_connection(db, configured, connection, provider=provider, now=NOW + timedelta(days=1))
+    entry = db.scalar(select(WorkoutEntry))
+    set_treadmill_incline(db, configured, connection, 930, 4)
+    if corrected:
+        correct_workout_entry(
+            db,
+            entry,
+            {
+                "actual": {"summary": "Local correction"},
+                "difficulty_1_to_10": 7,
+                "pain_flag": True,
+                "notes": "Recorded locally",
+            },
+            TARGET,
+        )
+    delete_workout_entry(db, entry, TARGET)
+    assert history_day(db, TARGET)["workouts"] == []
+    assert _actual_workouts(db, TARGET) == []
+    assert _status_maps(db, TARGET)[1] == {}
+    assert calculate_training_summary(db, TARGET)["completed_exercise_entries_28d"] == 0
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    monkeypatch.setattr("app.services.strava.datetime", FixedDatetime)
+    provider.activities[0]["distance"] = 7000
+    if sync_kind == "webhook":
+        sync_webhook_activity(
+            db,
+            configured,
+            owner_id=connection.athlete_id,
+            activity_id=930,
+            aspect_type="update",
+            provider=provider,
+        )
+    elif sync_kind == "day":
+        sync_connection_for_date(db, configured, connection, TARGET, provider=provider, now=NOW)
+    else:
+        sync_connection(db, configured, connection, provider=provider, now=NOW)
+    db.refresh(entry)
+    assert entry.status == "completed"
+    assert entry.source == "strava"
+    assert entry.actual_json["distance_km"] == 7
+    assert entry.actual_json["incline_percent"] == 4
+    assert entry.actual_json["incline_source"] == "manual"
+    assert entry.workout_log_id is None
+    if corrected:
+        assert entry.difficulty_1_to_10 == 7
+        assert entry.pain_flag is True
+        assert entry.notes == "Recorded locally"
+    assert db.scalar(select(func.count(WorkoutEntry.id))) == 1
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 1
+    assert len(provider.rename_calls) == 1
+    rows = history_day(db, TARGET)["workouts"]
+    assert len(rows) == 1
+    assert rows[0]["id"] == str(entry.id)
+    assert rows[0]["actual"]["distance_km"] == 7
+    assert rows[0]["strava_activity"]["activity_id"] == 930
+    if has_plan:
+        assert _status_maps(db, TARGET)[1][entry.planned_recommendation_id]["status"] == "completed"
+    else:
+        assert _actual_workouts(db, TARGET)[0]["id"] == str(entry.id)
+    assert calculate_training_summary(db, TARGET)["completed_exercise_entries_28d"] == 1
+
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    assert db.scalar(select(func.count(WorkoutEntry.id))) == 1
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 1
+    assert len(provider.rename_calls) == 1
+
+
+def test_deleting_one_strength_match_preserves_other_exercises(
+    db: Session, settings: Settings, seeded
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(931, sport_type="WeightTraining", name="Workout")])
+    for index, name in enumerate(["Squat", "Bench press"]):
+        db.add(
+            WorkoutEntry(
+                entry_date=TARGET,
+                planned_recommendation_id=f"lift-{index}",
+                exercise_name=name,
+                prescription_json={"exercise_type": "strength"},
+                status="planned",
+                source="recommended",
+            )
+        )
+    db.commit()
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    entry = db.scalar(select(WorkoutEntry).where(WorkoutEntry.exercise_name == "Squat"))
+    delete_workout_entry(db, entry, TARGET)
+    assert [row["exercise_name"] for row in history_day(db, TARGET)["workouts"]] == ["Bench press"]
+    provider.activities[0]["moving_time"] = 3600
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    rows = history_day(db, TARGET)["workouts"]
+    assert {row["exercise_name"] for row in rows} == {"Squat", "Bench press"}
+    assert len(rows) == 2
+    for row in rows:
+        assert row["status"] == "completed"
+        assert row["actual"]["duration_seconds"] == 3600
+        assert row["strava_activity"]["activity_id"] == 931
+
+
+@pytest.mark.parametrize("has_plan", [True, False])
+def test_activity_deleted_locally_and_on_strava_stays_removed(
+    db: Session, settings: Settings, seeded, has_plan: bool
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(932)])
+    if has_plan:
+        planned_treadmill(db)
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    entry = db.scalar(select(WorkoutEntry))
+    delete_workout_entry(db, entry, TARGET)
+
+    provider.activities = []
+    sync_webhook_activity(
+        db,
+        configured,
+        owner_id=connection.athlete_id,
+        activity_id=932,
+        aspect_type="delete",
+        provider=provider,
+    )
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+
+    assert history_day(db, TARGET)["workouts"] == []
+    assert _actual_workouts(db, TARGET) == []
+    assert _status_maps(db, TARGET)[1] == {}
+    assert db.scalar(select(func.count(StravaActivity.id))) == 0
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 0
+    assert calculate_training_summary(db, TARGET)["completed_exercise_entries_28d"] == 0
+
+
+@pytest.mark.parametrize("changed_field", ["date", "sport", "recommendation"])
+def test_deleted_strava_record_rematches_when_activity_or_recommendation_changes(
+    db: Session, settings: Settings, seeded, changed_field: str
+) -> None:
+    configured = strava_settings(settings)
+    provider = FakeStrava([activity(933)])
+    original = planned_treadmill(db)
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    delete_workout_entry(db, original, TARGET)
+    expected_date = TARGET
+    expected_type = "run"
+    if changed_field == "date":
+        provider.activities[0]["start_date"] = "2026-08-11T16:30:00Z"
+        expected_date += timedelta(days=1)
+        replacement = planned_treadmill(db, expected_date)
+    elif changed_field == "sport":
+        provider.activities[0]["sport_type"] = "Ride"
+        expected_type = "bike"
+        replacement = None
+    else:
+        # Regenerating the workout detaches deleted records from their old recommendation.
+        original.planned_recommendation_id = None
+        db.commit()
+        replacement = planned_treadmill(db)
+
+    sync_connection(db, configured, connection, provider=provider, now=NOW + timedelta(days=1))
+    db.refresh(original)
+    assert original.status == "deleted"
+    visible = history_day(db, expected_date)["workouts"]
+    assert len(visible) == 1
+    assert visible[0]["status"] == "completed"
+    assert visible[0]["strava_activity"]["activity_id"] == 933
+    assert db.scalar(select(func.count(StravaActivityMatch.id))) == 1
+    match = db.scalar(select(StravaActivityMatch))
+    restored = db.get(WorkoutEntry, match.workout_entry_id)
+    assert restored.id != original.id
+    assert restored.entry_date == expected_date
+    assert restored.prescription_json["exercise_type"] == expected_type
+    if replacement:
+        assert restored.id == replacement.id
+
+
+@pytest.mark.parametrize("sync_kind", ["scheduled", "day", "webhook"])
+@pytest.mark.parametrize("has_plan", [True, False])
+@pytest.mark.parametrize("name", ["Zwift Run - Watopia", "Zwift - Volcano Circuit Run in Watopia"])
+def test_zwift_run_auto_name_uses_existing_schema(
+    db: Session, settings: Settings, seeded, monkeypatch, sync_kind: str, has_plan: bool, name: str
+) -> None:
+    configured = strava_settings(settings)
+    payload = {
+        **activity(920, sport_type="VirtualRun", name=name, distance=6247.5, moving_time=2244),
+        "type": "VirtualRun",
+        "device_name": "Zwift Run",
+        "trainer": False,
+    }
+    provider = WritableStrava([payload])
+    planned = planned_treadmill(db) if has_plan else None
+    connection = authorize(db, configured, seeded.account_id, provider)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    monkeypatch.setattr("app.services.strava.datetime", FixedDatetime)
+    if sync_kind == "webhook":
+        sync_webhook_activity(
+            db,
+            configured,
+            owner_id=connection.athlete_id,
+            activity_id=920,
+            aspect_type="create",
+            provider=provider,
+        )
+    elif sync_kind == "day":
+        sync_connection_for_date(db, configured, connection, TARGET, provider=provider, now=NOW)
+    else:
+        sync_connection(db, configured, connection, provider=provider, now=NOW)
+
+    expected = (
+        "Treadmill easy run - 3% incline" if has_plan else "Virtual Run - 6.2475 km, 37.4 min"
+    )
+    assert provider.rename_calls == [(920, expected)]
+    imported = db.scalar(select(StravaActivity))
+    assert imported.name_update_json["mode"] == "automatic"
+    assert imported.name_update_json["previous_name"] == name
+    history = history_day(db, TARGET)["workouts"][0]
+    today = (
+        _status_maps(db, TARGET)[1][planned.planned_recommendation_id]
+        if planned
+        else _actual_workouts(db, TARGET)[0]
+    )
+    assert today["strava_activity"] == history["strava_activity"]
+    assert today["strava_activity"]["name"] == expected
+    assert today["actual"]["activity_name"] == expected
+    assert today["actual"]["distance_km"] == 6.247
+    assert today["actual"]["duration_seconds"] == 2244
+    assert today["actual"]["sport_type"] == "VirtualRun"
+    assert today["actual"]["device_name"] == "Zwift Run"
+    assert today["actual"]["elevation_gain_m"] == 42.5
+    assert "incline_percent" not in today["actual"]
+    assert "map" not in today["actual"]
+    # Restoring the original Zwift title must not trigger another automatic write.
+    provider.activities[0]["name"] = name
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    assert provider.rename_calls == [(920, expected)]
+    assert history_day(db, TARGET)["workouts"][0]["strava_activity"]["name"] == name
+
+
+@pytest.mark.parametrize(
+    ("name", "sport_type", "generic"),
+    [
+        ("Zwift Run", "VirtualRun", True),
+        ("  ZWIFT Run  -  Watopia  ", "VirtualRun", True),
+        ("Zwift Run - Watopia", "VirtualRide", False),
+        ("Zwift - May Field in Watopia", "Run", False),
+        ("Zwift - Watopia", "Ride", False),
+        ("My Zwift run", "VirtualRun", False),
+        ("Zwift personal best", "VirtualRun", False),
+        ("Zwift Run -", "VirtualRun", False),
+    ],
+)
+def test_zwift_default_names_are_limited_to_virtual_runs(
+    name: str, sport_type: str, generic: bool
+) -> None:
+    assert is_generic_activity_name(name, sport_type) is generic
+
+
 @pytest.mark.parametrize("sync_kind", ["scheduled", "day", "webhook"])
 def test_auto_name_uses_plan_and_is_not_reapplied(
     db: Session, settings: Settings, seeded, monkeypatch, sync_kind: str
@@ -469,6 +756,10 @@ def test_auto_name_uses_plan_and_is_not_reapplied(
 
 
 @pytest.mark.parametrize(
+    ("sport_type", "name"),
+    [("Run", "Evening run"), ("VirtualRun", "Zwift Run - Watopia")],
+)
+@pytest.mark.parametrize(
     ("start", "renamed"),
     [
         ("2026-08-09T21:59:00Z", False),
@@ -478,10 +769,10 @@ def test_auto_name_uses_plan_and_is_not_reapplied(
     ],
 )
 def test_auto_name_only_on_current_zurich_date(
-    db: Session, settings: Settings, seeded, start: str, renamed: bool
+    db: Session, settings: Settings, seeded, start: str, renamed: bool, sport_type: str, name: str
 ) -> None:
     configured = strava_settings(settings)
-    provider = WritableStrava([activity(902, start_date=start)])
+    provider = WritableStrava([activity(902, start_date=start, sport_type=sport_type, name=name)])
     for offset in (-1, 0, 1):
         planned_treadmill(db, TARGET + timedelta(days=offset))
     connection = authorize(db, configured, seeded.account_id, provider)
@@ -490,18 +781,30 @@ def test_auto_name_only_on_current_zurich_date(
 
 
 @pytest.mark.parametrize(
-    ("name", "has_plan", "writable"),
+    ("name", "sport_type", "has_plan", "writable"),
     [
-        ("My birthday run", True, True),
-        ("Evening Run", False, True),
-        ("Evening Run", True, False),
+        ("My birthday run", "Run", True, True),
+        ("Evening Run", "Run", False, True),
+        ("Evening Run", "Run", True, False),
+        ("My Zwift run", "VirtualRun", True, True),
+        ("Evening Run", "VirtualRun", False, True),
+        ("Zwift Run - Watopia", "VirtualRun", True, False),
+        ("Zwift Run - Watopia", "VirtualRun", False, False),
     ],
 )
 def test_auto_name_preserves_custom_unmatched_and_read_only_activities(
-    db: Session, settings: Settings, seeded, name: str, has_plan: bool, writable: bool
+    db: Session,
+    settings: Settings,
+    seeded,
+    name: str,
+    sport_type: str,
+    has_plan: bool,
+    writable: bool,
 ) -> None:
     configured = strava_settings(settings)
-    provider = (WritableStrava if writable else FakeStrava)([activity(903, name=name)])
+    provider = (WritableStrava if writable else FakeStrava)(
+        [activity(903, name=name, sport_type=sport_type)]
+    )
     if has_plan:
         planned_treadmill(db)
     connection = authorize(db, configured, seeded.account_id, provider)
@@ -511,18 +814,36 @@ def test_auto_name_preserves_custom_unmatched_and_read_only_activities(
     assert history_day(db, TARGET)["workouts"][0]["strava_activity"]["can_rename"] is writable
 
 
-def test_auto_name_rechecks_remote_title(db: Session, settings: Settings, seeded) -> None:
+@pytest.mark.parametrize(
+    ("name", "sport_type", "has_plan", "remote_name"),
+    [
+        ("Evening run", "Run", True, "Named on my watch"),
+        ("Zwift Run - Watopia", "VirtualRun", True, "My Zwift personal best"),
+        ("Zwift Run - Watopia", "VirtualRun", False, "My Zwift personal best"),
+        ("Zwift Run - Watopia", "VirtualRun", False, "Evening Run"),
+    ],
+)
+def test_auto_name_rechecks_remote_title(
+    db: Session,
+    settings: Settings,
+    seeded,
+    name: str,
+    sport_type: str,
+    has_plan: bool,
+    remote_name: str,
+) -> None:
     class EditedStrava(WritableStrava):
         def get_activity(self, access_token: str, activity_id: int) -> dict[str, Any]:
-            return {**super().get_activity(access_token, activity_id), "name": "Named on my watch"}
+            return {**super().get_activity(access_token, activity_id), "name": remote_name}
 
     configured = strava_settings(settings)
-    provider = EditedStrava([activity(904)])
-    planned_treadmill(db)
+    provider = EditedStrava([activity(904, name=name, sport_type=sport_type)])
+    if has_plan:
+        planned_treadmill(db)
     connection = authorize(db, configured, seeded.account_id, provider)
     sync_connection(db, configured, connection, provider=provider, now=NOW)
     assert provider.rename_calls == []
-    assert db.scalar(select(StravaActivity)).name == "Named on my watch"
+    assert db.scalar(select(StravaActivity)).name == remote_name
 
 
 def test_auto_name_failure_preserves_import_and_retries_today(

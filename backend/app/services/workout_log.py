@@ -160,6 +160,9 @@ def process_daily_workout_log(
     )
     try:
         db.scalar(select(DailyPlan).where(DailyPlan.plan_date == target_date).with_for_update())
+        # History may have deleted or corrected a record while extraction was running.
+        planned_entries, eligible_entries, recommendations = _workout_context(db, target_date)
+        _validate_reviewed_extraction(extraction, recommendations)
         workout_log = db.scalar(
             select(DailyWorkoutLog).where(DailyWorkoutLog.log_date == target_date)
         )
@@ -268,10 +271,13 @@ def _workout_context(
         raise LookupError("Today's plan is not available")
     planned_entries = list(
         db.scalars(
-            select(WorkoutEntry).where(
+            select(WorkoutEntry)
+            .where(
                 WorkoutEntry.entry_date == target_date,
                 WorkoutEntry.planned_recommendation_id.is_not(None),
+                WorkoutEntry.status != "deleted",
             )
+            .execution_options(populate_existing=True)
         )
     )
     eligible_entries = [

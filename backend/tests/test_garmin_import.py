@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ImportedActivity, WorkoutEntry
 from app.services.garmin_import import import_garmin_csv
+from app.services.history import delete_workout_entry, history_day
 from app.services.metrics import calculate_goal_progress_evidence
 
 
@@ -34,3 +35,8 @@ def test_garmin_csv_import_is_idempotent_and_enters_goal_evidence(
     assert evidence["run_count"] == 1
     assert evidence["running_distance_28d_km"] == 10.0
     assert evidence["recent_runs"][0]["pace_seconds_per_km"] == 357
+
+    delete_workout_entry(db, entry, date(2026, 8, 12))
+    assert import_garmin_csv(db, export) == {"created": 0, "skipped": 1, "total": 1}
+    assert history_day(db, entry.entry_date)["workouts"] == []
+    assert calculate_goal_progress_evidence(db, date(2026, 8, 12))["run_count"] == 0

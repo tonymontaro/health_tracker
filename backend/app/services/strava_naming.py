@@ -14,7 +14,16 @@ WRITE_SCOPE = "activity:write"
 MAX_NAME_LENGTH = 300
 
 
+def is_zwift_run_name(name: str, sport_type: str) -> bool:
+    if sport_type != "VirtualRun":
+        return False
+    normalized = " ".join(name.casefold().split())
+    return re.fullmatch(r"zwift(?: run)?(?: - .+)?", normalized) is not None
+
+
 def is_generic_activity_name(name: str, sport_type: str) -> bool:
+    if is_zwift_run_name(name, sport_type):
+        return True
     sport = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", sport_type).casefold()
     sports = {sport, sport_type.casefold(), "workout"}
     if sport_type in {"Run", "VirtualRun", "TrailRun"}:
@@ -39,6 +48,7 @@ def planned_activity_entries(db: Session, activity: StravaActivity) -> list[Work
                 StravaActivityMatch.match_kind == "planned_recommendation",
                 WorkoutEntry.entry_date == activity.activity_date,
                 WorkoutEntry.planned_recommendation_id.is_not(None),
+                WorkoutEntry.status != "deleted",
             )
             .order_by(WorkoutEntry.created_at, WorkoutEntry.id)
         )

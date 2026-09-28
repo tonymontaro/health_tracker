@@ -29,6 +29,7 @@ from app.services.strava_naming import (
     MAX_NAME_LENGTH,
     WRITE_SCOPE,
     is_generic_activity_name,
+    is_zwift_run_name,
     planned_activity_entries,
     recommended_activity_name,
 )
@@ -770,8 +771,13 @@ def rename_imported_activity(
     if automatic and (
         activity.activity_date != current.astimezone(ZoneInfo(settings.app_timezone)).date()
         or activity.name_update_json
-        or not entries
+        or (not entries and not is_zwift_run_name(activity.name, activity.sport_type))
         or not is_generic_activity_name(activity.name, activity.sport_type)
+        or not db.scalar(
+            select(StravaActivityMatch.id)
+            .join(WorkoutEntry, WorkoutEntry.id == StravaActivityMatch.workout_entry_id)
+            .where(StravaActivityMatch.activity_id == activity.id, WorkoutEntry.status != "deleted")
+        )
     ):
         db.commit()
         return activity
@@ -787,6 +793,7 @@ def rename_imported_activity(
             raise StravaIntegrationError("Strava returned an invalid activity date") from exc
         if (
             not is_generic_activity_name(remote_name, activity.sport_type)
+            or (not entries and not is_zwift_run_name(remote_name, activity.sport_type))
             or remote_start.astimezone(ZoneInfo(settings.app_timezone)).date()
             != activity.activity_date
             or str(remote.get("sport_type") or remote.get("type")) != activity.sport_type
@@ -816,7 +823,7 @@ def _store_activity_name(db: Session, activity: StravaActivity, name: str) -> No
         select(StravaActivityMatch).where(StravaActivityMatch.activity_id == activity.id)
     ):
         entry = db.get(WorkoutEntry, match.workout_entry_id)
-        if entry is None:
+        if entry is None or entry.status == "deleted":
             continue
         # Merge only the title, preserving corrections, measurements and diary ownership.
         if entry.actual_json is not None:
@@ -857,7 +864,7 @@ def set_treadmill_incline(
     for entry in db.scalars(
         select(WorkoutEntry)
         .join(StravaActivityMatch, StravaActivityMatch.workout_entry_id == WorkoutEntry.id)
-        .where(StravaActivityMatch.activity_id == activity.id)
+        .where(StravaActivityMatch.activity_id == activity.id, WorkoutEntry.status != "deleted")
     ):
         actual = dict(entry.actual_json or {})
         actual.pop("incline_percent", None)
@@ -989,7 +996,8 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
             if entry and not match.previous_entry_json.get("generated")
         ]
         if any(
-            entry.entry_date != activity.activity_date
+            entry.planned_recommendation_id is None
+            or entry.entry_date != activity.activity_date
             or not _compatible(entry, _exercise_type(activity.sport_type))
             for entry in planned_entries
         ):
@@ -998,7 +1006,12 @@ def _materialize_activity(db: Session, activity: StravaActivity) -> int:
     if matches:
         for match in matches:
             entry = db.get(WorkoutEntry, match.workout_entry_id)
-            if entry and entry.source == "strava":
+            if entry and (entry.source == "strava" or entry.status == "deleted"):
+                # Local deletion never suppresses an activity that still exists on Strava.
+                if entry.status == "deleted":
+                    entry.status = "completed"
+                    entry.source = "strava"
+                    entry.workout_log_id = None
                 entry.actual_json = actual
                 if match.previous_entry_json.get("generated"):
                     entry.entry_date = activity.activity_date
@@ -1075,9 +1088,13 @@ def _remove_materialized_activity(db: Session, activity: StravaActivity) -> None
         entry = db.get(WorkoutEntry, match.workout_entry_id)
         previous = match.previous_entry_json
         if entry is None:
+            db.delete(match)
             continue
         if previous.get("generated"):
             db.delete(entry)
+            continue
+        if entry.status == "deleted":
+            db.delete(match)
             continue
         if entry.source == "strava":
             entry.status = str(previous.get("status") or "planned")

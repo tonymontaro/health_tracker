@@ -14,6 +14,7 @@ from app.schemas.api import HistoryNutritionUpdate, HistoryWorkoutUpdate
 from app.services.history import (
     correct_nutrition_entry,
     correct_workout_entry,
+    delete_workout_entry,
     history_day,
     history_index,
     serialize_nutrition,
@@ -71,7 +72,7 @@ def patch_workout_history(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     entry = db.get(WorkoutEntry, entry_id)
-    if entry is None or entry.entry_date != target_date:
+    if entry is None or entry.entry_date != target_date or entry.status == "deleted":
         raise HTTPException(status_code=404, detail="Workout entry not found")
     today = datetime.now(ZoneInfo(settings.app_timezone)).date()
     try:
@@ -79,3 +80,18 @@ def patch_workout_history(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return serialize_workout(updated)
+
+
+@router.delete("/{target_date}/workout/{entry_id}", status_code=204)
+def delete_workout_history(
+    target_date: date,
+    entry_id: UUID,
+    _: AuthContext = Depends(require_write_auth),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    entry = db.get(WorkoutEntry, entry_id)
+    if entry is None or entry.entry_date != target_date:
+        raise HTTPException(status_code=404, detail="Workout entry not found")
+    today = datetime.now(ZoneInfo(settings.app_timezone)).date()
+    delete_workout_entry(db, entry, today)

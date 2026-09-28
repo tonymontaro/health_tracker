@@ -113,7 +113,13 @@ def _status_maps(db: Session, target: date) -> tuple[dict[str, Any], dict[str, A
         for item in db.scalars(select(NutritionEntry).where(NutritionEntry.entry_date == target))
         if item.planned_recommendation_id is not None
     }
-    entries = list(db.scalars(select(WorkoutEntry).where(WorkoutEntry.entry_date == target)))
+    entries = list(
+        db.scalars(
+            select(WorkoutEntry).where(
+                WorkoutEntry.entry_date == target, WorkoutEntry.status != "deleted"
+            )
+        )
+    )
     activity_names = history_activity_names(db, entries)
     workouts = {
         item.planned_recommendation_id: {
@@ -155,6 +161,7 @@ def _actual_workouts(db: Session, target: date) -> list[dict[str, Any]]:
             .where(
                 WorkoutEntry.entry_date == target,
                 WorkoutEntry.planned_recommendation_id.is_(None),
+                WorkoutEntry.status != "deleted",
             )
             .order_by(WorkoutEntry.created_at)
         )
@@ -488,7 +495,7 @@ def patch_workout_difficulty(
 ) -> dict[str, Any]:
     target = _recording_date(db, settings, target_date)
     entry = db.get(WorkoutEntry, entry_id)
-    if entry is None or entry.entry_date != target:
+    if entry is None or entry.entry_date != target or entry.status == "deleted":
         raise HTTPException(status_code=404, detail="Workout entry not found")
     if entry.actual_json is None and entry.status not in {"completed", "partial"}:
         raise HTTPException(

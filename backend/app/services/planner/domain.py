@@ -99,7 +99,7 @@ def validate_plan(
             errors.append(f"Exercise lacks a measurable workload: {prescription.exercise_name}.")
         previous = db.scalar(
             select(WorkoutEntry)
-            .where(func.lower(WorkoutEntry.exercise_name) == key)
+            .where(func.lower(WorkoutEntry.exercise_name) == key, WorkoutEntry.status != "deleted")
             .order_by(WorkoutEntry.entry_date.desc())
         )
         if (
@@ -186,7 +186,10 @@ def validate_two_week_plan(
 
     previous_entries = list(
         db.scalars(
-            select(WorkoutEntry).where(WorkoutEntry.entry_date == plan_date - timedelta(days=1))
+            select(WorkoutEntry).where(
+                WorkoutEntry.entry_date == plan_date - timedelta(days=1),
+                WorkoutEntry.status != "deleted",
+            )
         )
     )
     recovery_cautioned = any(

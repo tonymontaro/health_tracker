@@ -22,7 +22,7 @@ def ensure_workout_feedback(
     entries = list(
         db.scalars(
             select(WorkoutEntry)
-            .where(WorkoutEntry.entry_date == target_date)
+            .where(WorkoutEntry.entry_date == target_date, WorkoutEntry.status != "deleted")
             .order_by(WorkoutEntry.created_at)
         )
     )

@@ -199,4 +199,7 @@ Persisted actual measurements, difficulty, pain, notes, source/provenance, and d
 - Use an Alembic migration for schema changes; do not edit an applied migration to alter an existing database.
 - Keep API writes behind the existing authentication and CSRF dependencies.
 - Do not expose secrets in logs, test output, screenshots, diffs, or final responses.
-- Update `README.md`, `.env.example`, and this file when operational facts or developer workflows change.
+- Update `README.md` and `AGENTS.md` only for important changes to setup, operation, developer workflows, architecture, or core domain rules, or when the user explicitly requests documentation edits.
+  Routine bug fixes, small feature refinements, UI changes, and internal refactors do not require edits to these files.
+  Update only the documentation directly affected by an important change.
+- Keep `.env.example` in sync when supported configuration keys, defaults, or required setup change.
