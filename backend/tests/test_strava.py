@@ -143,6 +143,7 @@ def activity(
     sport_type: str = "Run",
     distance: float = 6200,
     moving_time: int = 2280,
+    elevation_gain: float = 0,
     start_date: str = "2026-08-10T16:30:00Z",
 ) -> dict[str, Any]:
     return {
@@ -155,7 +156,7 @@ def activity(
         "distance": distance,
         "moving_time": moving_time,
         "elapsed_time": moving_time + 60,
-        "total_elevation_gain": 42.5,
+        "total_elevation_gain": elevation_gain,
         "average_heartrate": 151.2,
         "max_heartrate": 174.0,
         "device_name": "Apple Watch",
@@ -416,6 +417,53 @@ def planned_treadmill(db: Session, target: date = TARGET) -> WorkoutEntry:
     return entry
 
 
+@pytest.mark.parametrize("sport_type", ["Run", "VirtualRun", "TrailRun"])
+@pytest.mark.parametrize("has_plan", [True, False])
+@pytest.mark.parametrize(
+    ("elevation", "actual_incline", "prescribed_incline", "expected_suffix"),
+    [
+        (62.4, None, 3, "62m elevation"),
+        (62.6, 4, 3, "63m elevation"),
+        (0, 0, 3, "0% incline"),
+        (0, 4.5, 3, "4.5% incline"),
+        (0, None, 0, "0% incline"),
+        (0, None, 5, "5% incline"),
+        (0, None, None, "3% incline"),
+    ],
+)
+def test_all_run_titles_use_elevation_or_incline(
+    sport_type: str,
+    has_plan: bool,
+    elevation: float,
+    actual_incline: float | None,
+    prescribed_incline: float | None,
+    expected_suffix: str,
+) -> None:
+    imported = StravaActivity(
+        sport_type=sport_type,
+        elevation_gain_m=elevation,
+        treadmill_incline_percent=actual_incline,
+        distance_m=6247.5,
+        moving_time_seconds=2244,
+    )
+    entries = (
+        [
+            WorkoutEntry(
+                exercise_name="Treadmill hill intervals",
+                prescription_json={"incline_percent": prescribed_incline},
+            )
+        ]
+        if has_plan
+        else []
+    )
+    expected_title = "Treadmill hill intervals" if has_plan else "Treadmill easy run"
+    if not has_plan and elevation == 0 and actual_incline is None:
+        expected_suffix = "3% incline"
+    assert recommended_activity_name(imported, entries) == f"{expected_title} - {expected_suffix}"
+    assert imported.treadmill_incline_percent == actual_incline
+    assert imported.elevation_gain_m == elevation
+
+
 @pytest.mark.parametrize("has_plan", [True, False])
 @pytest.mark.parametrize("corrected", [True, False])
 @pytest.mark.parametrize("sync_kind", ["polling", "day", "webhook"])
@@ -619,8 +667,16 @@ def test_deleted_strava_record_rematches_when_activity_or_recommendation_changes
 @pytest.mark.parametrize("sync_kind", ["scheduled", "day", "webhook"])
 @pytest.mark.parametrize("has_plan", [True, False])
 @pytest.mark.parametrize("name", ["Zwift Run - Watopia", "Zwift - Volcano Circuit Run in Watopia"])
+@pytest.mark.parametrize("elevation_gain", [62.4, 0, None])
 def test_zwift_run_auto_name_uses_existing_schema(
-    db: Session, settings: Settings, seeded, monkeypatch, sync_kind: str, has_plan: bool, name: str
+    db: Session,
+    settings: Settings,
+    seeded,
+    monkeypatch,
+    sync_kind: str,
+    has_plan: bool,
+    name: str,
+    elevation_gain: float | None,
 ) -> None:
     configured = strava_settings(settings)
     payload = {
@@ -629,8 +685,15 @@ def test_zwift_run_auto_name_uses_existing_schema(
         "device_name": "Zwift Run",
         "trainer": False,
     }
+    if elevation_gain is not None:
+        payload["total_elevation_gain"] = elevation_gain
+    else:
+        payload.pop("total_elevation_gain")
     provider = WritableStrava([payload])
     planned = planned_treadmill(db) if has_plan else None
+    if planned:
+        planned.exercise_name = "Treadmill tempo run"
+        db.commit()
     connection = authorize(db, configured, seeded.account_id, provider)
 
     class FixedDatetime(datetime):
@@ -653,9 +716,9 @@ def test_zwift_run_auto_name_uses_existing_schema(
     else:
         sync_connection(db, configured, connection, provider=provider, now=NOW)
 
-    expected = (
-        "Treadmill easy run - 3% incline" if has_plan else "Virtual Run - 6.2475 km, 37.4 min"
-    )
+    expected_title = "Treadmill tempo run" if has_plan else "Treadmill easy run"
+    expected_suffix = "62m elevation" if elevation_gain else "3% incline"
+    expected = f"{expected_title} - {expected_suffix}"
     assert provider.rename_calls == [(920, expected)]
     imported = db.scalar(select(StravaActivity))
     assert imported.name_update_json["mode"] == "automatic"
@@ -668,12 +731,13 @@ def test_zwift_run_auto_name_uses_existing_schema(
     )
     assert today["strava_activity"] == history["strava_activity"]
     assert today["strava_activity"]["name"] == expected
+    assert today["strava_activity"]["recommended_name"] == expected
     assert today["actual"]["activity_name"] == expected
     assert today["actual"]["distance_km"] == 6.247
     assert today["actual"]["duration_seconds"] == 2244
     assert today["actual"]["sport_type"] == "VirtualRun"
     assert today["actual"]["device_name"] == "Zwift Run"
-    assert today["actual"]["elevation_gain_m"] == 42.5
+    assert today["actual"]["elevation_gain_m"] == (elevation_gain or 0)
     assert "incline_percent" not in today["actual"]
     assert "map" not in today["actual"]
     # Restoring the original Zwift title must not trigger another automatic write.
@@ -681,6 +745,42 @@ def test_zwift_run_auto_name_uses_existing_schema(
     sync_connection(db, configured, connection, provider=provider, now=NOW)
     assert provider.rename_calls == [(920, expected)]
     assert history_day(db, TARGET)["workouts"][0]["strava_activity"]["name"] == name
+
+
+def test_existing_virtual_run_title_can_be_explicitly_renamed_to_consistent_title(
+    db: Session, settings: Settings, seeded
+) -> None:
+    configured = strava_settings(settings)
+    provider = WritableStrava(
+        [
+            activity(
+                921,
+                sport_type="VirtualRun",
+                name="Virtual Run - 6.2475 km, 37.4 min",
+                distance=6247.5,
+                moving_time=2244,
+                elevation_gain=62,
+            )
+        ]
+    )
+    connection = authorize(db, configured, seeded.account_id, provider)
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    imported = db.scalar(select(StravaActivity))
+    imported.name_update_json = {"mode": "automatic", "name": imported.name}
+    db.commit()
+    before = deepcopy(db.scalar(select(WorkoutEntry)).actual_json)
+
+    rename_imported_activity(db, configured, connection, 921, provider=provider, now=NOW)
+
+    expected = "Treadmill easy run - 62m elevation"
+    assert provider.rename_calls == [(921, expected)]
+    row = history_day(db, TARGET)["workouts"][0]
+    assert row["exercise_name"] == expected
+    assert row["actual"] == {**before, "activity_name": expected}
+    assert row["strava_activity"] == _actual_workouts(db, TARGET)[0]["strava_activity"]
+    assert row["strava_activity"]["recommended_name"] == expected
+    sync_connection(db, configured, connection, provider=provider, now=NOW)
+    assert provider.rename_calls == [(921, expected)]
 
 
 @pytest.mark.parametrize(
@@ -736,7 +836,7 @@ def test_auto_name_uses_plan_and_is_not_reapplied(
     assert provider.rename_calls == [(901, suggested)]
     db.refresh(planned)
     assert planned.prescription_json == prescription
-    assert planned.actual_json["elevation_gain_m"] == 42.5
+    assert planned.actual_json["elevation_gain_m"] == 0
     assert "incline_percent" not in planned.actual_json
     assert serialize_workout(planned)["actual"]["activity_name"] == suggested
     history = history_day(db, TARGET)["workouts"][0]
@@ -993,7 +1093,7 @@ def test_actual_incline_overrides_plan_and_survives_sync(
     db.refresh(planned)
     assert planned.actual_json["incline_percent"] == incline
     assert planned.actual_json["incline_source"] == "manual"
-    assert planned.actual_json["elevation_gain_m"] == 42.5
+    assert planned.actual_json["elevation_gain_m"] == 0
     assert planned.prescription_json == original
     assert (planned.difficulty_1_to_10, planned.pain_flag, planned.notes) == (
         8,
@@ -1043,7 +1143,7 @@ def test_incline_preserves_corrections_and_works_without_write_permission(
     }
     assert entry.source == "history_correction"
     today = _actual_workouts(db, TARGET)[0]
-    assert today["strava_activity"]["recommended_name"] == "Treadmill run - 4% incline"
+    assert today["strava_activity"]["recommended_name"] == "Treadmill easy run - 4% incline"
     assert today["strava_activity"]["treadmill_incline_percent"] == 4
     assert today["strava_activity"]["can_rename"] is False
     assert provider.rename_calls == []

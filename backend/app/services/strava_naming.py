@@ -1,4 +1,4 @@
-"""Deterministic titles, preferring recorded treadmill incline over the saved target."""
+"""Deterministic titles using elevation or treadmill incline for runs."""
 
 import re
 from collections import defaultdict
@@ -56,6 +56,22 @@ def planned_activity_entries(db: Session, activity: StravaActivity) -> list[Work
 
 
 def recommended_activity_name(activity: StravaActivity, entries: list[WorkoutEntry]) -> str:
+    if activity.sport_type in {"Run", "VirtualRun", "TrailRun"}:
+        title = " + ".join(dict.fromkeys(entry.exercise_name for entry in entries)) or (
+            "Treadmill easy run"
+        )
+        if activity.elevation_gain_m > 0:
+            suffix = f" - {activity.elevation_gain_m:.0f}m elevation"
+        else:
+            incline = activity.treadmill_incline_percent
+            if incline is None and len(entries) == 1:
+                incline = entries[0].prescription_json.get("incline_percent")
+            # The default is a naming convention, never a recorded measurement.
+            if incline is None:
+                incline = 3
+            suffix = f" - {incline:g}% incline"
+        return title[: MAX_NAME_LENGTH - len(suffix)].strip() + suffix
+
     if entries:
         title = " + ".join(dict.fromkeys(entry.exercise_name for entry in entries))
         targets: list[str] = []
@@ -75,13 +91,7 @@ def recommended_activity_name(activity: StravaActivity, entries: list[WorkoutEnt
         suffix = f" - {', '.join(targets)}" if targets else ""
         return title[: MAX_NAME_LENGTH - len(suffix)].strip() + suffix
 
-    sport = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", activity.sport_type)
-    title = (
-        "Treadmill run"
-        if activity.sport_type in {"Run", "VirtualRun"}
-        and (activity.trainer or activity.treadmill_incline_percent is not None)
-        else sport
-    )
+    title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", activity.sport_type)
     actual: list[str] = []
     if activity.treadmill_incline_percent is not None:
         actual.append(f"{activity.treadmill_incline_percent:g}% incline")
